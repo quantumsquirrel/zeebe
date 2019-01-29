@@ -68,29 +68,26 @@ import org.slf4j.Logger;
 
 public class EmbeddedBrokerRule extends ExternalResource {
 
-  private static final boolean ENABLE_DEBUG_EXPORTER = false;
-  private static final boolean ENABLE_HTTP_EXPORTER = false;
-
-  private static final String SNAPSHOTS_DIRECTORY = "snapshots";
-  private static final String STATE_DIRECTORY = "state";
   public static final String DEFAULT_CONFIG_FILE = "zeebe.test.cfg.toml";
-
-  protected static final Logger LOG = TestLoggers.TEST_LOGGER;
   public static final int INSTALL_TIMEOUT = 15;
   public static final TimeUnit INSTALL_TIMEOUT_UNIT = TimeUnit.SECONDS;
   public static final String INSTALL_TIMEOUT_ERROR_MSG =
       "Deployment partition not installed into the container within %d %s.";
-
+  protected static final Logger LOG = TestLoggers.TEST_LOGGER;
+  private static final boolean ENABLE_DEBUG_EXPORTER = false;
+  private static final boolean ENABLE_HTTP_EXPORTER = false;
+  private static final String SNAPSHOTS_DIRECTORY = "snapshots";
+  private static final String STATE_DIRECTORY = "state";
   protected final RecordingExporterTestWatcher recordingExporterTestWatcher =
       new RecordingExporterTestWatcher();
-
-  protected BrokerCfg brokerCfg;
-  protected Broker broker;
-
-  protected ControlledActorClock controlledActorClock = new ControlledActorClock();
-
   protected final Supplier<InputStream> configSupplier;
   protected final Consumer<BrokerCfg>[] configurators;
+  protected BrokerCfg brokerCfg;
+  protected Broker broker;
+  protected ControlledActorClock controlledActorClock = new ControlledActorClock();
+  protected long startTime;
+  private File newTemporaryFolder;
+  private List<String> dataDirectories;
 
   @SafeVarargs
   public EmbeddedBrokerRule(Consumer<BrokerCfg>... configurators) {
@@ -115,10 +112,18 @@ public class EmbeddedBrokerRule extends ExternalResource {
     this.configurators = configurators;
   }
 
-  protected long startTime;
+  private static void deleteSnapshots(final File parentDir) {
+    final File snapshotDirectory = new File(parentDir, SNAPSHOTS_DIRECTORY);
 
-  private File newTemporaryFolder;
-  private List<String> dataDirectories;
+    if (snapshotDirectory.exists()) {
+      try {
+        FileUtil.deleteFolder(snapshotDirectory.getAbsolutePath());
+      } catch (final IOException e) {
+        throw new RuntimeException(
+            "Could not delete snapshot directory " + snapshotDirectory.getAbsolutePath(), e);
+      }
+    }
+  }
 
   @Override
   public Statement apply(final Statement base, final Description description) {
@@ -162,6 +167,10 @@ public class EmbeddedBrokerRule extends ExternalResource {
 
   public BrokerCfg getBrokerCfg() {
     return brokerCfg;
+  }
+
+  public SocketAddress getAtomixAddress() {
+    return brokerCfg.getNetwork().getAtomix().toSocketAddress();
   }
 
   public SocketAddress getClientAddress() {
@@ -280,19 +289,6 @@ public class EmbeddedBrokerRule extends ExternalResource {
             }
           }
         }
-      }
-    }
-  }
-
-  private static void deleteSnapshots(final File parentDir) {
-    final File snapshotDirectory = new File(parentDir, SNAPSHOTS_DIRECTORY);
-
-    if (snapshotDirectory.exists()) {
-      try {
-        FileUtil.deleteFolder(snapshotDirectory.getAbsolutePath());
-      } catch (final IOException e) {
-        throw new RuntimeException(
-            "Could not delete snapshot directory " + snapshotDirectory.getAbsolutePath(), e);
       }
     }
   }

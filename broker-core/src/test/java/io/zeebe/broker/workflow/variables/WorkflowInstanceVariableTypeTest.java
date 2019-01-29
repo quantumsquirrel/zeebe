@@ -20,9 +20,9 @@ package io.zeebe.broker.workflow.variables;
 import static io.zeebe.broker.workflow.gateway.ParallelGatewayStreamProcessorTest.PROCESS_ID;
 
 import io.zeebe.broker.test.EmbeddedBrokerRule;
-import io.zeebe.exporter.api.record.Assertions;
 import io.zeebe.exporter.api.record.Record;
 import io.zeebe.exporter.api.record.value.VariableRecordValue;
+import io.zeebe.exporter.api.record.Assertions;
 import io.zeebe.model.bpmn.Bpmn;
 import io.zeebe.model.bpmn.BpmnModelInstance;
 import io.zeebe.protocol.intent.VariableIntent;
@@ -48,7 +48,7 @@ public class WorkflowInstanceVariableTypeTest {
       Bpmn.createExecutableProcess(PROCESS_ID).startEvent().endEvent().done();
 
   public static EmbeddedBrokerRule brokerRule = new EmbeddedBrokerRule();
-  public static ClientApiRule apiRule = new ClientApiRule(brokerRule::getClientAddress);
+  public static ClientApiRule apiRule = new ClientApiRule(brokerRule::getAtomixAddress);
 
   @ClassRule public static RuleChain ruleChain = RuleChain.outerRule(brokerRule).around(apiRule);
 

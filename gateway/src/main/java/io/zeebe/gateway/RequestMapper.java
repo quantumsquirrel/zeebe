@@ -25,8 +25,11 @@ import io.zeebe.gateway.impl.broker.request.BrokerGetWorkflowRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerListWorkflowsRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerPublishMessageRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerResolveIncidentRequest;
+<<<<<<< HEAD
 import io.zeebe.gateway.impl.broker.request.BrokerSetVariablesRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerTopologyRequest;
+=======
+>>>>>>> chore(gateway): gateway is part of the Atomix cluster
 import io.zeebe.gateway.impl.broker.request.BrokerUpdateJobRetriesRequest;
 import io.zeebe.gateway.impl.data.MsgPackConverter;
 import io.zeebe.gateway.protocol.GatewayOuterClass.ActivateJobsRequest;
@@ -39,8 +42,6 @@ import io.zeebe.gateway.protocol.GatewayOuterClass.GetWorkflowRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.ListWorkflowsRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.PublishMessageRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.ResolveIncidentRequest;
-import io.zeebe.gateway.protocol.GatewayOuterClass.SetVariablesRequest;
-import io.zeebe.gateway.protocol.GatewayOuterClass.TopologyRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.UpdateJobRetriesRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.WorkflowRequestObject;
 import io.zeebe.msgpack.value.DocumentValue;
@@ -50,10 +51,6 @@ import org.agrona.concurrent.UnsafeBuffer;
 public class RequestMapper {
 
   private static final MsgPackConverter MSG_PACK_CONVERTER = new MsgPackConverter();
-
-  public static BrokerTopologyRequest toTopologyRequest(TopologyRequest grpcRequest) {
-    return new BrokerTopologyRequest();
-  }
 
   public static BrokerDeployWorkflowRequest toDeployWorkflowRequest(
       DeployWorkflowRequest grpcRequest) {
