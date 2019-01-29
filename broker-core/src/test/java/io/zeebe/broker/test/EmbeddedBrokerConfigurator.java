@@ -55,13 +55,15 @@ public class EmbeddedBrokerConfigurator {
       final int nodeId,
       final int partitionCount,
       final int replicationFactor,
-      final int clusterSize) {
+      final int clusterSize,
+      final String clusterName) {
     return cfg -> {
       final ClusterCfg cluster = cfg.getCluster();
       cluster.setNodeId(nodeId);
       cluster.setPartitionsCount(partitionCount);
       cluster.setReplicationFactor(replicationFactor);
       cluster.setClusterSize(clusterSize);
+      cluster.setClusterName(clusterName);
     };
   }
 
@@ -91,5 +93,9 @@ public class EmbeddedBrokerConfigurator {
 
   public static Consumer<BrokerCfg> setMetricsPort(final int port) {
     return cfg -> cfg.getMetrics().setPort(port);
+  }
+
+  public static Consumer<BrokerCfg> setAtomixApiPort(final int port) {
+    return cfg -> cfg.getNetwork().getAtomix().setPort(port);
   }
 }
