@@ -108,13 +108,7 @@
 
       <dependency>
         <groupId>io.zeebe</groupId>
-        <artifactId>zeebe-gossip</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-
-      <dependency>
-        <groupId>io.zeebe</groupId>
-        <artifactId>zeebe-service-container</artifactId>
+        <artifactId>zb-service-container</artifactId>
         <version>${project.version}</version>
       </dependency>
 
