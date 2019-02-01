@@ -12,3 +12,6 @@ port = 4
 
 [metrics]
 port = 5
+
+[network.atomix]
+port = 6
