@@ -21,8 +21,6 @@ import io.zeebe.gateway.impl.broker.request.BrokerCompleteJobRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerCreateWorkflowInstanceRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerDeployWorkflowRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerFailJobRequest;
-import io.zeebe.gateway.impl.broker.request.BrokerGetWorkflowRequest;
-import io.zeebe.gateway.impl.broker.request.BrokerListWorkflowsRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerPublishMessageRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerResolveIncidentRequest;
 <<<<<<< HEAD
@@ -38,8 +36,6 @@ import io.zeebe.gateway.protocol.GatewayOuterClass.CompleteJobRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.CreateWorkflowInstanceRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.DeployWorkflowRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.FailJobRequest;
-import io.zeebe.gateway.protocol.GatewayOuterClass.GetWorkflowRequest;
-import io.zeebe.gateway.protocol.GatewayOuterClass.ListWorkflowsRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.PublishMessageRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.ResolveIncidentRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.UpdateJobRetriesRequest;
@@ -124,18 +120,6 @@ public class RequestMapper {
     brokerRequest.setLocal(grpcRequest.getLocal());
 
     return brokerRequest;
-  }
-
-  public static BrokerListWorkflowsRequest toListWorkflowsRequest(
-      ListWorkflowsRequest grpcRequest) {
-    return new BrokerListWorkflowsRequest().setBpmnProcessId(grpcRequest.getBpmnProcessId());
-  }
-
-  public static BrokerGetWorkflowRequest toGetWorkflowRequest(GetWorkflowRequest grpcRequest) {
-    return new BrokerGetWorkflowRequest()
-        .setWorkflowKey(grpcRequest.getWorkflowKey())
-        .setBpmnProcessId(grpcRequest.getBpmnProcessId())
-        .setVersion(grpcRequest.getVersion());
   }
 
   public static BrokerActivateJobsRequest toActivateJobsRequest(ActivateJobsRequest grpcRequest) {
