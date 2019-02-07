@@ -17,11 +17,18 @@
  */
 package io.zeebe.broker.transport.clientapi;
 
+import static io.zeebe.logstreams.impl.service.LogStreamServiceNames.distributedLogPartitionServiceName;
 import static io.zeebe.util.buffer.BufferUtil.wrapString;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 
 import io.zeebe.broker.clustering.base.partitions.Partition;
 import io.zeebe.broker.clustering.base.topology.PartitionInfo;
+import io.zeebe.distributedlog.CommitLogEvent;
+import io.zeebe.distributedlog.impl.DistributedLogstreamPartition;
 import io.zeebe.logstreams.LogStreams;
 import io.zeebe.logstreams.log.BufferedLogStreamReader;
 import io.zeebe.logstreams.log.LogStream;
@@ -45,8 +52,12 @@ import io.zeebe.transport.RemoteAddress;
 import io.zeebe.transport.SocketAddress;
 import io.zeebe.transport.impl.RemoteAddressImpl;
 import io.zeebe.util.sched.testing.ActorSchedulerRule;
+<<<<<<< HEAD
 import java.io.File;
 import java.io.IOException;
+=======
+import java.nio.ByteBuffer;
+>>>>>>> chore(logstreams): implement an atomix primitive for log replication
 import java.util.List;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -57,6 +68,8 @@ import org.junit.Test;
 import org.junit.rules.RuleChain;
 import org.junit.rules.TemporaryFolder;
 import org.mockito.MockitoAnnotations;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 public class ClientApiMessageHandlerTest {
   protected static final RemoteAddress DEFAULT_ADDRESS =
@@ -108,11 +121,42 @@ public class ClientApiMessageHandlerTest {
 
     final StateStorage stateStorage = new StateStorage(runtime, snapshots);
 
+    final String logName = "test";
+
+    // Create distributed log service
+    final DistributedLogstreamPartition mockDistLog = mock(DistributedLogstreamPartition.class);
+    serviceContainerRule
+        .get()
+        .createService(distributedLogPartitionServiceName(logName), () -> mockDistLog)
+        .install();
+
+    // mock append
+    doAnswer(
+            new Answer<Void>() {
+              @Override
+              public Void answer(InvocationOnMock invocation) throws Throwable {
+                final Object[] arguments = invocation.getArguments();
+                if (arguments != null
+                    && arguments.length > 1
+                    && arguments[0] != null
+                    && arguments[1] != null) {
+                  final ByteBuffer buffer = (ByteBuffer) arguments[0];
+                  final long pos = (long) arguments[1];
+                  final byte[] bytes = new byte[buffer.remaining()];
+                  buffer.get(bytes);
+                  logStream.getLogStorageCommitter().onCommit(new CommitLogEvent(pos, bytes));
+                }
+                return null;
+              }
+            })
+        .when(mockDistLog)
+        .append(any(ByteBuffer.class), anyLong());
+
     logStream =
         LogStreams.createFsLogStream(LOG_STREAM_PARTITION_ID)
             .logRootPath(tempFolder.getRoot().getAbsolutePath())
             .serviceContainer(serviceContainerRule.get())
-            .logName("Test")
+            .logName(logName)
             .indexStateStorage(stateStorage)
             .build()
             .join();

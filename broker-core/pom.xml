@@ -250,6 +250,11 @@
 
     <dependency>
       <groupId>io.atomix</groupId>
+      <artifactId>atomix-raft</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.atomix</groupId>
       <artifactId>atomix-utils</artifactId>
     </dependency>
 

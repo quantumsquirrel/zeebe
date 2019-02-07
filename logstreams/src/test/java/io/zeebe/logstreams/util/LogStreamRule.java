@@ -16,7 +16,14 @@
 package io.zeebe.logstreams.util;
 
 import static io.zeebe.logstreams.impl.LogBlockIndexWriter.LOG;
+import static io.zeebe.logstreams.impl.service.LogStreamServiceNames.distributedLogPartitionServiceName;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 
+import io.zeebe.distributedlog.CommitLogEvent;
+import io.zeebe.distributedlog.impl.DistributedLogstreamPartition;
 import io.zeebe.logstreams.LogStreams;
 import io.zeebe.logstreams.impl.LogStreamBuilder;
 import io.zeebe.logstreams.log.LogStream;
@@ -28,12 +35,15 @@ import io.zeebe.util.sched.clock.ControlledActorClock;
 import io.zeebe.util.sched.testing.ActorSchedulerRule;
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import org.junit.rules.ExternalResource;
 import org.junit.rules.TemporaryFolder;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 public class LogStreamRule extends ExternalResource {
   public static final String DEFAULT_NAME = "test-logstream";
@@ -101,6 +111,7 @@ public class LogStreamRule extends ExternalResource {
     // apply additional configs
     streamBuilder.accept(builder);
 
+    openDistributedLog();
     openLogStream();
   }
 
@@ -117,6 +128,36 @@ public class LogStreamRule extends ExternalResource {
     }
 
     actorScheduler.stop();
+  }
+
+  private void openDistributedLog() {
+    final DistributedLogstreamPartition mockDistLog = mock(DistributedLogstreamPartition.class);
+    doAnswer(
+            new Answer<Void>() {
+              @Override
+              public Void answer(InvocationOnMock invocation) throws Throwable {
+                final Object[] arguments = invocation.getArguments();
+                if (arguments != null
+                    && arguments.length > 1
+                    && arguments[0] != null
+                    && arguments[1] != null) {
+                  final ByteBuffer buffer = (ByteBuffer) arguments[0];
+                  final long pos = (long) arguments[1];
+                  final byte[] bytes = new byte[buffer.remaining()];
+                  buffer.get(bytes);
+                  logStream.getLogStorageCommitter().onCommit(new CommitLogEvent(pos, bytes));
+                }
+                return null;
+              }
+            })
+        .when(mockDistLog)
+        .append(any(ByteBuffer.class), anyLong());
+
+    doAnswer(inv -> null).when(mockDistLog).addListener(any());
+
+    serviceContainer
+        .createService(distributedLogPartitionServiceName(builder.getLogName()), () -> mockDistLog)
+        .install();
   }
 
   public void closeLogStream() {
