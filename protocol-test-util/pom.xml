@@ -59,7 +59,12 @@
 
     <dependency>
       <groupId>io.zeebe</groupId>
-      <artifactId>zeebe-bpmn-model</artifactId>
+      <artifactId>zb-protocol-impl</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.zeebe</groupId>
+      <artifactId>zb-bpmn-model</artifactId>
     </dependency>
 
     <dependency>
