@@ -64,7 +64,7 @@ public class ActivateJobsTest {
 
   @Rule public RuleChain ruleChain = RuleChain.outerRule(embeddedBrokerRule).around(clientRule);
 
-  @Rule public Timeout timeout = Timeout.seconds(60);
+  @Rule public Timeout timeout = Timeout.seconds(120);
 
   private ZeebeClient client;
 
