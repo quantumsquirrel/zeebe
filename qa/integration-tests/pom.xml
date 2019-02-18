@@ -85,11 +85,6 @@
     </dependency>
 
     <dependency>
-      <groupId>org.agrona</groupId>
-      <artifactId>agrona</artifactId>
-    </dependency>
-
-    <dependency>
       <groupId>io.grpc</groupId>
       <artifactId>grpc-core</artifactId>
     </dependency>
