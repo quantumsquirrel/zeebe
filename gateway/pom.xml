@@ -106,6 +106,16 @@
     </dependency>
 
     <dependency>
+      <groupId>io.atomix</groupId>
+      <artifactId>atomix-cluster</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.atomix</groupId>
+      <artifactId>atomix-utils</artifactId>
+    </dependency>
+
+    <dependency>
       <groupId>io.zeebe</groupId>
       <artifactId>zeebe-protocol-test-util</artifactId>
       <scope>test</scope>
