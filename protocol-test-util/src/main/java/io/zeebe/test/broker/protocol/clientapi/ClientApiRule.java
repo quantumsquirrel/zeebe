@@ -97,7 +97,7 @@ public class ClientApiRule extends ExternalResource {
 
   @Override
   protected void before() {
-    this.atomix = atomixSupplier.get();
+    fetchAtomix();
 
     scheduler =
         ActorScheduler.newActorScheduler()
@@ -122,7 +122,12 @@ public class ClientApiRule extends ExternalResource {
   }
 
   public void restart() {
-    this.atomix = atomixSupplier.get();
+    fetchAtomix();
+  }
+
+  private void fetchAtomix() {
+    atomix = atomixSupplier.get();
+    assertThat(atomix).isNotNull();
   }
 
   private void waitForTopology() {
