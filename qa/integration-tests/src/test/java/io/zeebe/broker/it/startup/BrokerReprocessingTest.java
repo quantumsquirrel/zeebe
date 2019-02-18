@@ -144,7 +144,7 @@ public class BrokerReprocessingTest {
 
   @Rule public ExpectedException exception = ExpectedException.none();
 
-  @Rule public Timeout timeout = new Timeout(30, TimeUnit.SECONDS);
+  @Rule public Timeout timeout = new Timeout(120, TimeUnit.SECONDS);
 
   private Runnable restartAction = () -> {};
 
