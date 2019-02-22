@@ -31,11 +31,14 @@
 
     <dependency>
       <groupId>io.zeebe</groupId>
+<<<<<<< HEAD
       <artifactId>zeebe-raft</artifactId>
     </dependency>
 
     <dependency>
       <groupId>io.zeebe</groupId>
+=======
+>>>>>>> chore(broker-core): replace leader election
       <artifactId>zb-util</artifactId>
     </dependency>
 
