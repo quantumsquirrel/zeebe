@@ -24,7 +24,6 @@ import static io.zeebe.broker.clustering.base.ClusterBaseLayerServiceNames.raftI
 import static io.zeebe.broker.clustering.base.partitions.PartitionServiceNames.partitionLeaderElectionServiceName;
 import static io.zeebe.broker.clustering.base.partitions.PartitionServiceNames.partitionLeadershipEventListenerServiceName;
 import static io.zeebe.broker.logstreams.LogStreamServiceNames.stateStorageFactoryServiceName;
-import static io.zeebe.logstreams.impl.service.LogStreamServiceNames.distributedLogPartitionServiceName;
 
 import io.atomix.core.election.LeaderElection;
 import io.zeebe.broker.Loggers;
@@ -32,8 +31,7 @@ import io.zeebe.broker.clustering.base.raft.RaftPersistentConfiguration;
 import io.zeebe.broker.clustering.base.topology.PartitionInfo;
 import io.zeebe.broker.logstreams.state.StateStorageFactory;
 import io.zeebe.broker.logstreams.state.StateStorageFactoryService;
-import io.zeebe.distributedlog.impl.DistributedLogstreamPartition;
-import io.zeebe.logstreams.LogStreams;
+import io.zeebe.logstreams.impl.service.LogStreamServiceNames;
 import io.zeebe.logstreams.log.LogStream;
 import io.zeebe.logstreams.state.StateStorage;
 import io.zeebe.servicecontainer.CompositeServiceBuilder;
@@ -75,7 +73,7 @@ public class PartitionInstallService implements Service<Void> {
     this.startContext = startContext;
 
     final int partitionId = configuration.getPartitionId();
-    final String logName = String.format("partition-%d", partitionId);
+    final String logName = Partition.getPartitionName(partitionId);
 
     // TODO: rename/remove?
     final ServiceName<Void> raftInstallServiceName = raftInstallServiceName(partitionId);
@@ -88,13 +86,7 @@ public class PartitionInstallService implements Service<Void> {
         new StateStorage(
             configuration.getBlockIndexDirectory(), configuration.getSnapshotsDirectory());
 
-    logStreamServiceName =
-        LogStreams.createFsLogStream(partitionId)
-            .logSegmentSize((int) configuration.getLogSegmentSize())
-            .logDirectory(logDirectoryPath)
-            .logName(logName)
-            .indexStateStorage(stateStorage)
-            .buildWith(partitionInstall);
+    logStreamServiceName = LogStreamServiceNames.logStreamServiceName(logName);
 
     final StateStorageFactoryService stateStorageFactoryService =
         new StateStorageFactoryService(configuration.getStatesDirectory());
@@ -102,14 +94,15 @@ public class PartitionInstallService implements Service<Void> {
     partitionInstall
         .createService(stateStorageFactoryServiceName, stateStorageFactoryService)
         .install();
-
+    /*
     final DistributedLogstreamPartition distributedLogstreamPartition =
         new DistributedLogstreamPartition(partitionId);
     partitionInstall
         .createService(distributedLogPartitionServiceName(logName), distributedLogstreamPartition)
         .dependency(ATOMIX_SERVICE, distributedLogstreamPartition.getAtomixInjector())
         .dependency(ATOMIX_JOIN_SERVICE)
-        .install();
+        // .dependency(logStreamServiceName, distributedLogstreamPartition.getLogStreamInjector())
+        .install();*/
 
     final PartitionLeaderElection leaderElection = new PartitionLeaderElection(partitionId);
     final ServiceName<LeaderElection> partitionLeaderElectionServiceName =

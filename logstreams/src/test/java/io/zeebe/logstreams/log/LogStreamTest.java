@@ -26,16 +26,16 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 
 import io.zeebe.dispatcher.Dispatcher;
-import io.zeebe.distributedlog.CommitLogEvent;
+import io.zeebe.distributedlog.DistributedLogstreamService;
+import io.zeebe.distributedlog.impl.DefaultDistributedLogstreamService;
 import io.zeebe.distributedlog.impl.DistributedLogstreamPartition;
+import io.zeebe.distributedlog.impl.DistributedLogstreamServiceConfig;
 import io.zeebe.logstreams.impl.LogStreamBuilder;
 import io.zeebe.logstreams.state.StateStorage;
 import io.zeebe.servicecontainer.testing.ServiceContainerRule;
 import io.zeebe.test.util.AutoCloseableRule;
-import io.zeebe.util.sched.future.ActorFuture;
 import io.zeebe.util.sched.testing.ActorSchedulerRule;
 import java.io.File;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -46,6 +46,7 @@ import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.rules.RuleChain;
 import org.junit.rules.TemporaryFolder;
+import org.mockito.internal.util.reflection.FieldSetter;
 import org.mockito.stubbing.Answer;
 
 public class LogStreamTest {
@@ -90,31 +91,57 @@ public class LogStreamTest {
 
     streamConfig.accept(builder);
 
-    final ActorFuture<LogStream> logStreamFuture = builder.build();
+    final LogStream logStream = builder.build().join();
+
+    final DistributedLogstreamPartition mockDistLog = mock(DistributedLogstreamPartition.class);
+
+    final DistributedLogstreamService distributedLogImpl =
+        new DefaultDistributedLogstreamService(new DistributedLogstreamServiceConfig());
+
+    final String nodeId = "0";
+    try {
+      FieldSetter.setField(
+          distributedLogImpl,
+          DefaultDistributedLogstreamService.class.getDeclaredField("logStream"),
+          logStream);
+
+      FieldSetter.setField(
+          distributedLogImpl,
+          DefaultDistributedLogstreamService.class.getDeclaredField("logStorage"),
+          logStream.getLogStorage());
+
+      FieldSetter.setField(
+          distributedLogImpl,
+          DefaultDistributedLogstreamService.class.getDeclaredField("currentLeader"),
+          nodeId);
+
+    } catch (NoSuchFieldException e) {
+      e.printStackTrace();
+    }
 
     doAnswer(
-            (Answer<Void>)
+            (Answer<Long>)
                 invocation -> {
                   final Object[] arguments = invocation.getArguments();
                   if (arguments != null
                       && arguments.length > 1
                       && arguments[0] != null
                       && arguments[1] != null) {
-                    final ByteBuffer buffer = (ByteBuffer) arguments[0];
+                    final byte[] bytes = (byte[]) arguments[0];
                     final long pos = (long) arguments[1];
-                    final byte[] bytes = new byte[buffer.remaining()];
-                    buffer.get(bytes);
-                    logStreamFuture
-                        .get()
-                        .getLogStorageCommitter()
-                        .onCommit(new CommitLogEvent(pos, bytes));
+                    return distributedLogImpl.append(nodeId, pos, bytes);
                   }
-                  return null;
+                  return -1L;
                 })
         .when(mockDistLog)
-        .append(any(ByteBuffer.class), anyLong());
+        .append(any(), anyLong());
 
-    final LogStream logStream = logStreamFuture.join();
+    serviceContainer
+        .get()
+        .createService(distributedLogPartitionServiceName("test-log-name"), () -> mockDistLog)
+        .install()
+        .join();
+
     return logStream;
   }
 
@@ -387,7 +414,7 @@ public class LogStreamTest {
     }
 
     final long writtenEventPosition = position;
-    waitUntil(() -> logStream.getCommitPosition() > writtenEventPosition);
+    waitUntil(() -> logStream.getCommitPosition() >= writtenEventPosition);
 
     return position;
   }
