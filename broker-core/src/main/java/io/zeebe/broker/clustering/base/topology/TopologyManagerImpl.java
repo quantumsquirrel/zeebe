@@ -30,6 +30,7 @@ import io.atomix.core.election.LeadershipEvent;
 import io.zeebe.broker.Loggers;
 import io.zeebe.broker.clustering.base.partitions.RaftState;
 import io.zeebe.broker.system.configuration.ClusterCfg;
+import io.zeebe.distributedlog.impl.DistributedLogstreamName;
 import io.zeebe.protocol.impl.data.cluster.BrokerInfo;
 import io.zeebe.transport.SocketAddress;
 import io.zeebe.util.LogUtil;
@@ -90,7 +91,8 @@ public class TopologyManagerImpl extends Actor
         () -> {
           LOG.debug("Topology manager : Adding leader election listener");
           election.addListener(this::onLeadershipEvent);
-          updateLeader(election.getLeadership(), Integer.parseInt(election.name()));
+          updateLeader(
+              election.getLeadership(), DistributedLogstreamName.getPartitionId(election.name()));
         });
   }
 
@@ -142,7 +144,8 @@ public class TopologyManagerImpl extends Actor
               newState = RaftState.LEADER;
             }
 
-            final int partitionId = Integer.parseInt(leadershipEvent.topic());
+            final int partitionId =
+                DistributedLogstreamName.getPartitionId(leadershipEvent.topic());
             final int replicationFactor =
                 leadershipEvent.newLeadership().candidates().size() + 1; // TODO: check
 
