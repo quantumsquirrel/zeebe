@@ -104,8 +104,13 @@ public class ConfigurationTest {
   @Test
   public void shouldUseDefaultPorts() {
     assertPorts(
-        "default", CLIENT_PORT, MANAGEMENT_PORT, REPLICATION_PORT, SUBSCRIPTION_PORT, METRICS_PORT, ATOMIX_PORT);
-
+        "default",
+        CLIENT_PORT,
+        MANAGEMENT_PORT,
+        REPLICATION_PORT,
+        SUBSCRIPTION_PORT,
+        METRICS_PORT,
+        ATOMIX_PORT);
   }
 
   @Test
@@ -130,7 +135,13 @@ public class ConfigurationTest {
   public void shouldUsePortOffsetWithSpecifiedPorts() {
     final int offset = 30;
     assertPorts(
-        "specific-ports-offset", 1 + offset, 2 + offset, 3 + offset, 4 + offset, 5 + offset, 6 + offset);
+        "specific-ports-offset",
+        1 + offset,
+        2 + offset,
+        3 + offset,
+        4 + offset,
+        5 + offset,
+        6 + offset);
   }
 
   @Test
@@ -151,15 +162,21 @@ public class ConfigurationTest {
   public void shouldUsePortOffsetFromEnvironmentWithSpecifiedPorts() {
     environment.put(ENV_PORT_OFFSET, "3");
     final int offset = 30;
-    assertPorts("specific-ports", 1 + offset, 2 + offset, 3 + offset, 4 + offset, 5 + offset, 6 + offset);
+    assertPorts(
+        "specific-ports", 1 + offset, 2 + offset, 3 + offset, 4 + offset, 5 + offset, 6 + offset);
   }
 
   @Test
   public void shouldIgnoreInvalidPortOffsetFromEnvironment() {
     environment.put(ENV_PORT_OFFSET, "a");
     assertPorts(
-        "default", CLIENT_PORT, MANAGEMENT_PORT, REPLICATION_PORT, SUBSCRIPTION_PORT, METRICS_PORT, ATOMIX_PORT);
-
+        "default",
+        CLIENT_PORT,
+        MANAGEMENT_PORT,
+        REPLICATION_PORT,
+        SUBSCRIPTION_PORT,
+        METRICS_PORT,
+        ATOMIX_PORT);
   }
 
   @Test

@@ -59,7 +59,7 @@
 
     <dependency>
       <groupId>io.zeebe</groupId>
-      <artifactId>zb-bpmn-model</artifactId>
+      <artifactId>zeebe-bpmn-model</artifactId>
     </dependency>
 
     <dependency>

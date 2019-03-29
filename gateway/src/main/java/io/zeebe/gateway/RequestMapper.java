@@ -23,11 +23,7 @@ import io.zeebe.gateway.impl.broker.request.BrokerDeployWorkflowRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerFailJobRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerPublishMessageRequest;
 import io.zeebe.gateway.impl.broker.request.BrokerResolveIncidentRequest;
-<<<<<<< HEAD
 import io.zeebe.gateway.impl.broker.request.BrokerSetVariablesRequest;
-import io.zeebe.gateway.impl.broker.request.BrokerTopologyRequest;
-=======
->>>>>>> chore(gateway): gateway is part of the Atomix cluster
 import io.zeebe.gateway.impl.broker.request.BrokerUpdateJobRetriesRequest;
 import io.zeebe.gateway.impl.data.MsgPackConverter;
 import io.zeebe.gateway.protocol.GatewayOuterClass.ActivateJobsRequest;
@@ -38,6 +34,7 @@ import io.zeebe.gateway.protocol.GatewayOuterClass.DeployWorkflowRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.FailJobRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.PublishMessageRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.ResolveIncidentRequest;
+import io.zeebe.gateway.protocol.GatewayOuterClass.SetVariablesRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.UpdateJobRetriesRequest;
 import io.zeebe.gateway.protocol.GatewayOuterClass.WorkflowRequestObject;
 import io.zeebe.msgpack.value.DocumentValue;

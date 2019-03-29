@@ -102,7 +102,7 @@
 
       <dependency>
         <groupId>io.zeebe</groupId>
-        <artifactId>zb-service-container</artifactId>
+        <artifactId>zeebe-service-container</artifactId>
         <version>${project.version}</version>
       </dependency>
 

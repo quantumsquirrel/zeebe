@@ -75,11 +75,6 @@ public class LogStreamTest {
 
     final StateStorage stateStorage =
         new StateStorage(indexFolder.getRoot(), snapshotFolder.getRoot());
-    final DistributedLogstreamPartition mockDistLog = mock(DistributedLogstreamPartition.class);
-    serviceContainer
-        .get()
-        .createService(distributedLogPartitionServiceName("test-log-name"), () -> mockDistLog)
-        .install();
 
     final LogStreamBuilder builder = new LogStreamBuilder(PARTITION_ID);
     builder

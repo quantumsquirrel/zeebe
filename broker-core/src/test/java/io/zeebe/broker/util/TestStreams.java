@@ -147,7 +147,6 @@ public class TestStreams {
 
     final StateStorage stateStorage = new StateStorage(index, snapshots);
 
-    final String rootPath = storageDirectory.getAbsolutePath();
     final LogStream logStream =
         LogStreams.createFsLogStream(partitionId)
             .logRootPath(segments.getAbsolutePath())

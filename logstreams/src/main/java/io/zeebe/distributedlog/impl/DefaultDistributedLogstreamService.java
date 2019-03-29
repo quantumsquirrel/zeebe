@@ -29,6 +29,7 @@ import io.zeebe.logstreams.LogStreams;
 import io.zeebe.logstreams.log.BufferedLogStreamReader;
 import io.zeebe.logstreams.log.LogStream;
 import io.zeebe.logstreams.spi.LogStorage;
+import io.zeebe.logstreams.state.StateStorage;
 import io.zeebe.servicecontainer.ServiceContainer;
 import java.io.File;
 import java.lang.reflect.Field;
@@ -109,6 +110,11 @@ public class DefaultDistributedLogstreamService
     final File snapshotDirectory = new File(partitionDirectory, "snapshot");
     snapshotDirectory.mkdir();
 
+    final File stateDirectory = new File(partitionDirectory, "state");
+    snapshotDirectory.mkdir();
+
+    final StateStorage stateStorage = new StateStorage(stateDirectory, snapshotDirectory);
+
     // A hack to get partitionId from the name
     final String[] splitted = logServiceName.split("-");
     final int partitionId = Integer.parseInt(splitted[splitted.length - 1]);
@@ -119,8 +125,7 @@ public class DefaultDistributedLogstreamService
             .logSegmentSize(config.getLogSegmentSize())
             .logName(logServiceName)
             .serviceContainer(serviceContainer)
-            .snapshotStorage(
-                LogStreams.createFsSnapshotStore(snapshotDirectory.getAbsolutePath()).build())
+            .indexStateStorage(stateStorage)
             .build()
             .join();
     this.logStorage = this.logStream.getLogStorage();

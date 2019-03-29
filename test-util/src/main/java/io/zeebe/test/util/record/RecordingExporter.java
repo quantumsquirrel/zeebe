@@ -15,7 +15,6 @@
  */
 package io.zeebe.test.util.record;
 
-<<<<<<< HEAD
 import io.zeebe.exporter.api.record.Record;
 import io.zeebe.exporter.api.record.RecordValue;
 import io.zeebe.exporter.api.record.value.DeploymentRecordValue;
@@ -32,22 +31,6 @@ import io.zeebe.exporter.api.record.value.WorkflowInstanceCreationRecordValue;
 import io.zeebe.exporter.api.record.value.WorkflowInstanceRecordValue;
 import io.zeebe.exporter.api.record.value.WorkflowInstanceSubscriptionRecordValue;
 import io.zeebe.exporter.api.spi.Exporter;
-=======
-import io.zeebe.exporter.record.Record;
-import io.zeebe.exporter.record.RecordValue;
-import io.zeebe.exporter.record.value.DeploymentRecordValue;
-import io.zeebe.exporter.record.value.IncidentRecordValue;
-import io.zeebe.exporter.record.value.JobBatchRecordValue;
-import io.zeebe.exporter.record.value.JobRecordValue;
-import io.zeebe.exporter.record.value.MessageRecordValue;
-import io.zeebe.exporter.record.value.MessageStartEventSubscriptionRecordValue;
-import io.zeebe.exporter.record.value.MessageSubscriptionRecordValue;
-import io.zeebe.exporter.record.value.TimerRecordValue;
-import io.zeebe.exporter.record.value.VariableRecordValue;
-import io.zeebe.exporter.record.value.WorkflowInstanceRecordValue;
-import io.zeebe.exporter.record.value.WorkflowInstanceSubscriptionRecordValue;
-import io.zeebe.exporter.spi.Exporter;
->>>>>>> chore(broker-core): replace leader election
 import io.zeebe.protocol.clientapi.ValueType;
 import io.zeebe.protocol.intent.DeploymentIntent;
 import io.zeebe.protocol.intent.IncidentIntent;
