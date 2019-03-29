@@ -33,6 +33,7 @@ import io.zeebe.gateway.impl.broker.response.BrokerRejection;
 import io.zeebe.gateway.impl.broker.response.BrokerResponse;
 import io.zeebe.gateway.impl.configuration.GatewayCfg;
 import io.zeebe.msgpack.value.DocumentValue;
+import io.zeebe.protocol.Protocol;
 import io.zeebe.protocol.clientapi.ErrorCode;
 import io.zeebe.protocol.clientapi.RejectionType;
 import io.zeebe.protocol.clientapi.ValueType;
@@ -353,7 +354,12 @@ public class BrokerClientTest {
 
     // when
     final BrokerResponse<JobRecord> response =
-        client.sendRequest(new BrokerCompleteJobRequest(79, DocumentValue.EMPTY_DOCUMENT)).join();
+        client
+            .sendRequest(
+                new BrokerCompleteJobRequest(
+                    Protocol.encodePartitionId(Protocol.DEPLOYMENT_PARTITION, 79),
+                    DocumentValue.EMPTY_DOCUMENT))
+            .join();
 
     // then
     assertThat(response.isRejection()).isTrue();

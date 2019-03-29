@@ -15,3 +15,6 @@ host = "subscriptionHost"
 
 [metrics]
 host = "metricsHost"
+
+[network.atomix]
+host = "atomixHost"

@@ -105,13 +105,13 @@ public class DefaultDistributedLogstreamService
         LogstreamConfig.getLogDirectory(localmemberId) + "/" + logServiceName;
 
     final File logDirectory = new File(partitionDirectory, "log");
-    logDirectory.mkdir();
+    logDirectory.mkdirs();
 
     final File snapshotDirectory = new File(partitionDirectory, "snapshot");
-    snapshotDirectory.mkdir();
+    snapshotDirectory.mkdirs();
 
     final File stateDirectory = new File(partitionDirectory, "state");
-    snapshotDirectory.mkdir();
+    stateDirectory.mkdirs();
 
     final StateStorage stateStorage = new StateStorage(stateDirectory, snapshotDirectory);
 
