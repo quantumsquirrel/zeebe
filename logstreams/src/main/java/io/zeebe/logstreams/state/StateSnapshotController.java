@@ -54,6 +54,47 @@ public class StateSnapshotController implements SnapshotController {
   }
 
   @Override
+  public void takeSnapshotForPosition(final long processingPos) {
+    if (db == null) {
+      throw new IllegalStateException("Cannot create snapshot of not open database.");
+    }
+
+    final File snapshotDir = storage.getSnapshotDirectoryFor(processingPos);
+    if (snapshotDir.exists()) {
+      return;
+    }
+
+    LOG.info("Take snapshot for processing position {}.", processingPos);
+    db.createSnapshot(snapshotDir);
+  }
+
+  @Override
+  public void moveSnapshot(final long processingPos, final StateSnapshotMetadata metadata) {
+    if (db == null) {
+      throw new IllegalStateException("Cannot create snapshot of not open database.");
+    }
+
+    final File previousLocation = storage.getSnapshotDirectoryFor(processingPos);
+    if (!previousLocation.exists()) {
+      throw new IllegalStateException(
+          "Snapshot directory does not exist for position " + processingPos);
+    }
+
+    final File snapshotDir = storage.getSnapshotDirectoryFor(metadata);
+    if (snapshotDir.exists()) {
+      return;
+    }
+
+    LOG.info(
+        "Snapshot for position {} is valid. Move snapshot from {} to {}.",
+        processingPos,
+        previousLocation.getAbsolutePath(),
+        snapshotDir.getAbsolutePath());
+
+    previousLocation.renameTo(snapshotDir);
+  }
+
+  @Override
   public StateSnapshotMetadata recover(
       long commitPosition, int term, Predicate<StateSnapshotMetadata> filter) throws Exception {
     final List<StateSnapshotMetadata> snapshots = storage.listRecoverable(commitPosition);
@@ -107,6 +148,29 @@ public class StateSnapshotController implements SnapshotController {
     for (final StateSnapshotMetadata other : others) {
       FileUtil.deleteFolder(storage.getSnapshotDirectoryFor(other).getAbsolutePath());
       LOG.trace("Purged snapshot {}", other);
+    }
+  }
+
+  @Override
+  public void ensureMaxSnapshotCount(int maxSnapshotCount) throws Exception {
+    final List<String> snapshotPaths = storage.listSorted();
+    if (snapshotPaths.size() > maxSnapshotCount) {
+      LOG.info(
+          "Ensure max snapshot count {}, will delete {} snapshot(s).",
+          maxSnapshotCount,
+          snapshotPaths.size() - maxSnapshotCount);
+      final List<String> snapshotsToRemove =
+          snapshotPaths.subList(maxSnapshotCount, snapshotPaths.size());
+
+      for (final String snapshot : snapshotsToRemove) {
+        FileUtil.deleteFolder(snapshot);
+        LOG.trace("Purged snapshot {}", snapshot);
+      }
+    } else {
+      LOG.info(
+          "Tried to ensure max snapshot count {}, nothing to do snapshot count is {}.",
+          maxSnapshotCount,
+          snapshotPaths.size());
     }
   }
 

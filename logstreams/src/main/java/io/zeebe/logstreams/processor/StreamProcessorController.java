@@ -28,13 +28,9 @@ import io.zeebe.util.LangUtil;
 import io.zeebe.util.metrics.MetricsManager;
 import io.zeebe.util.sched.Actor;
 import io.zeebe.util.sched.ActorCondition;
-import io.zeebe.util.sched.ActorPriority;
 import io.zeebe.util.sched.ActorScheduler;
-import io.zeebe.util.sched.ActorTask.ActorLifecyclePhase;
-import io.zeebe.util.sched.SchedulingHints;
 import io.zeebe.util.sched.future.ActorFuture;
 import io.zeebe.util.sched.future.CompletableActorFuture;
-import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 
@@ -54,8 +50,6 @@ public class StreamProcessorController extends Actor {
   private final LogStreamReader logStreamReader;
   private final LogStreamRecordWriter logStreamWriter;
 
-  private final Duration snapshotPeriod;
-
   private final ActorScheduler actorScheduler;
   private final AtomicBoolean isOpened = new AtomicBoolean(false);
   private Phase phase = Phase.REPROCESSING;
@@ -69,6 +63,7 @@ public class StreamProcessorController extends Actor {
   private StreamProcessorMetrics metrics;
   private DbContext dbContext;
   private ProcessingStateMachine processingStateMachine;
+  private SnapshotStateMachine snapshotStateMachine;
 
   public StreamProcessorController(final StreamProcessorContext context) {
     this.streamProcessorContext = context;
@@ -84,7 +79,6 @@ public class StreamProcessorController extends Actor {
 
     this.logStreamReader = context.getLogStreamReader();
     this.logStreamWriter = context.getLogStreamWriter();
-    this.snapshotPeriod = context.getSnapshotPeriod();
   }
 
   @Override
@@ -207,71 +201,27 @@ public class StreamProcessorController extends Actor {
   private void onRecovered() {
     phase = Phase.PROCESSING;
 
+    final LogStream logStream = streamProcessorContext.getLogStream();
+    snapshotStateMachine =
+        new SnapshotStateMachine(
+            processingStateMachine::getLastProcessedPositionAsync,
+            processingStateMachine::getLastWrittenPositionAsync,
+            snapshotController,
+            logStream::registerOnCommitPositionUpdatedCondition,
+            logStream::removeOnCommitPositionUpdatedCondition,
+            logStream::getTerm,
+            logStream::getCommitPosition);
+
+    actorScheduler.submitActor(snapshotStateMachine);
+
     onCommitPositionUpdatedCondition =
         actor.onCondition(
             getName() + "-on-commit-position-updated", processingStateMachine::readNextEvent);
-    streamProcessorContext.logStream.registerOnCommitPositionUpdatedCondition(
-        onCommitPositionUpdatedCondition);
-
-    actor.runAtFixedRate(snapshotPeriod, this::createSnapshot);
+    logStream.registerOnCommitPositionUpdatedCondition(onCommitPositionUpdatedCondition);
 
     // start reading
     streamProcessor.onRecovered();
     actor.submit(processingStateMachine::readNextEvent);
-  }
-
-  private void createSnapshot() {
-    if (actor.getLifecyclePhase() == ActorLifecyclePhase.STARTED) {
-      // run as io-bound actor while writing snapshot
-      actor.setSchedulingHints(SchedulingHints.ioBound());
-      actor.submit(this::doCreateSnapshot);
-    } else {
-      doCreateSnapshot();
-    }
-  }
-
-  private void doCreateSnapshot() {
-
-    final long lastWrittenEventPosition = processingStateMachine.getLastWrittenEventPosition();
-    final long lastSuccessfulProcessedEventPosition =
-        processingStateMachine.getLastSuccessfulProcessedEventPosition();
-    final long lastWrittenPosition =
-        lastWrittenEventPosition > lastSuccessfulProcessedEventPosition
-            ? lastWrittenEventPosition
-            : lastSuccessfulProcessedEventPosition;
-
-    final StateSnapshotMetadata metadata =
-        new StateSnapshotMetadata(
-            lastSuccessfulProcessedEventPosition,
-            lastWrittenPosition,
-            streamProcessorContext.getLogStream().getTerm(),
-            false);
-
-    writeSnapshot(metadata);
-
-    // reset to cpu bound
-    actor.setSchedulingHints(SchedulingHints.cpuBound(ActorPriority.REGULAR));
-  }
-
-  private void writeSnapshot(final StateSnapshotMetadata metadata) {
-    final long start = System.currentTimeMillis();
-    final String name = streamProcessorContext.getName();
-    LOG.info(
-        "Write snapshot for stream processor {} at event position {}.",
-        name,
-        metadata.getLastSuccessfulProcessedEventPosition());
-
-    try {
-      snapshotController.takeSnapshot(metadata);
-
-      final long snapshotCreationTime = System.currentTimeMillis() - start;
-      LOG.info("Creation of snapshot {} took {} ms.", name, snapshotCreationTime);
-      metrics.recordSnapshotCreationTime(snapshotCreationTime);
-
-      snapshotPosition = processingStateMachine.getLastSuccessfulProcessedEventPosition();
-    } catch (final Exception e) {
-      LOG.error("Stream processor '{}' failed. Can not write snapshot.", getName(), e);
-    }
   }
 
   public ActorFuture<Void> closeAsync() {
@@ -296,11 +246,29 @@ public class StreamProcessorController extends Actor {
     if (!isFailed()) {
       actor.run(
           () -> {
-            createSnapshot();
-            try {
-              snapshotController.close();
-            } catch (Exception e) {
-              LOG.error("Error on closing snapshotController.", e);
+            final LogStream logStream = streamProcessorContext.logStream;
+
+            if (snapshotStateMachine != null) {
+              LOG.info("On closing, will try to enforce snapshot creation.");
+              actor.runOnCompletionBlockingCurrentPhase(
+                  snapshotStateMachine.enforceSnapshotCreation(
+                      processingStateMachine.getLastSuccessfulProcessedEventPosition(),
+                      processingStateMachine.getLastWrittenEventPosition(),
+                      logStream.getCommitPosition(),
+                      logStream.getTerm()),
+                  (v, ex) -> {
+                    try {
+                      snapshotController.close();
+                    } catch (Exception e) {
+                      LOG.error("Error on closing snapshotController.", e);
+                    }
+                  });
+            } else {
+              try {
+                snapshotController.close();
+              } catch (Exception e) {
+                LOG.error("Error on closing snapshotController.", e);
+              }
             }
           });
     }

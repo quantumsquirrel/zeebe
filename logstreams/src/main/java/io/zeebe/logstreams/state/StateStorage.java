@@ -18,8 +18,10 @@ package io.zeebe.logstreams.state;
 import io.zeebe.logstreams.impl.Loggers;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 
 /** Handles how snapshots/databases are stored on the file system. */
@@ -53,10 +55,6 @@ public class StateStorage {
   }
 
   public File getSnapshotDirectoryFor(final StateSnapshotMetadata metadata) {
-    if (metadata == null) {
-      throw new NullPointerException();
-    }
-
     final String path =
         String.format(
             "%d%s%d%s%d",
@@ -65,6 +63,12 @@ public class StateStorage {
             metadata.getLastWrittenEventPosition(),
             SEPARATOR,
             metadata.getLastWrittenEventTerm());
+
+    return new File(snapshotsDirectory, path);
+  }
+
+  public File getSnapshotDirectoryFor(final long currentPosition) {
+    final String path = String.format("%d", currentPosition);
 
     return new File(snapshotsDirectory, path);
   }
@@ -119,5 +123,14 @@ public class StateStorage {
     }
 
     return snapshots;
+  }
+
+  public List<String> listSorted() {
+    final File[] snapshotFolders = snapshotsDirectory.listFiles();
+
+    return Arrays.stream(snapshotFolders)
+        .map(f -> f.getAbsolutePath())
+        .sorted()
+        .collect(Collectors.toList());
   }
 }

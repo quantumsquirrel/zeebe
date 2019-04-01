@@ -28,6 +28,10 @@ public interface SnapshotController extends AutoCloseable {
    */
   void takeSnapshot(StateSnapshotMetadata metadata) throws Exception;
 
+  void takeSnapshotForPosition(long processingPos);
+
+  void moveSnapshot(long processingPos, StateSnapshotMetadata metadata);
+
   /**
    * Recovers the state from the latest snapshot and returns the corresponding metadata. The
    * metadata is used by the StreamProcessController to know where to seek to in the log stream.
@@ -70,4 +74,11 @@ public interface SnapshotController extends AutoCloseable {
   default void purgeAllExcept(StateSnapshotMetadata metadata) throws Exception {
     purgeAll(s -> !s.equals(metadata));
   }
+
+  /**
+   * Ensures that only the given maximum of snapshots are kept, the rest will be purged.
+   *
+   * @param maxSnapshotCount the maximum count of snapshots which should be kept
+   */
+  void ensureMaxSnapshotCount(int maxSnapshotCount) throws Exception;
 }

@@ -271,6 +271,16 @@ public final class ProcessingStateMachine {
         updateStateRetryStrategy.runWithRetry(
             () -> {
               zeebeDbTransaction.commit();
+
+              // needs to be directly after commit
+              // so no other ActorJob can interfere between commit and update the positions
+              if (onErrorHandling) {
+                errorRecordPosition = eventPosition;
+                LOG.info(
+                    LOG_ERROR_EVENT_WRITTEN, errorRecordPosition, logStream.getCommitPosition());
+              }
+              lastSuccessfulProcessedEventPosition = currentEvent.getPosition();
+              lastWrittenEventPosition = eventPosition;
               return true;
             },
             abortCondition);
@@ -283,14 +293,6 @@ public final class ProcessingStateMachine {
                 ERROR_MESSAGE_UPDATE_STATE_FAILED, currentEvent, streamProcessorName, throwable);
             onError(throwable, this::updateState);
           } else {
-
-            if (onErrorHandling) {
-              errorRecordPosition = eventPosition;
-              LOG.info(LOG_ERROR_EVENT_WRITTEN, errorRecordPosition, logStream.getCommitPosition());
-            }
-            lastSuccessfulProcessedEventPosition = currentEvent.getPosition();
-            lastWrittenEventPosition = eventPosition;
-
             executeSideEffects();
           }
         });
@@ -318,7 +320,18 @@ public final class ProcessingStateMachine {
   }
 
   public long getLastWrittenEventPosition() {
-    return lastWrittenEventPosition;
+    final long lastSuccessfulProcessedEventPosition = getLastSuccessfulProcessedEventPosition();
+    return lastWrittenEventPosition > lastSuccessfulProcessedEventPosition
+        ? lastWrittenEventPosition
+        : lastSuccessfulProcessedEventPosition;
+  }
+
+  public ActorFuture<Long> getLastWrittenPositionAsync() {
+    return actor.call(this::getLastWrittenEventPosition);
+  }
+
+  public ActorFuture<Long> getLastProcessedPositionAsync() {
+    return actor.call(() -> lastSuccessfulProcessedEventPosition);
   }
 
   public static class ProcessingStateMachineBuilder {
