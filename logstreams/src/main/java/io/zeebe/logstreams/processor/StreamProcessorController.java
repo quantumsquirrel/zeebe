@@ -21,9 +21,7 @@ import io.zeebe.logstreams.impl.Loggers;
 import io.zeebe.logstreams.log.LogStream;
 import io.zeebe.logstreams.log.LogStreamReader;
 import io.zeebe.logstreams.log.LogStreamRecordWriter;
-import io.zeebe.logstreams.log.LoggedEvent;
 import io.zeebe.logstreams.spi.SnapshotController;
-import io.zeebe.logstreams.state.StateSnapshotMetadata;
 import io.zeebe.util.LangUtil;
 import io.zeebe.util.metrics.MetricsManager;
 import io.zeebe.util.sched.Actor;
@@ -109,7 +107,7 @@ public class StreamProcessorController extends Actor {
 
     try {
       LOG.info("Recovering state of partition {} from snapshot", partitionId);
-      snapshotPosition = recoverFromSnapshot(logStream.getCommitPosition(), logStream.getTerm());
+      snapshotPosition = recoverFromSnapshot();
 
       streamProcessor.onOpen(streamProcessorContext);
     } catch (final Exception e) {
@@ -158,9 +156,8 @@ public class StreamProcessorController extends Actor {
     }
   }
 
-  private long recoverFromSnapshot(final long commitPosition, final int term) throws Exception {
-    final StateSnapshotMetadata recovered =
-        snapshotController.recover(commitPosition, term, this::validateSnapshot);
+  private long recoverFromSnapshot() throws Exception {
+    final long lowerBoundSnapshotPosition = snapshotController.recover();
 
     final ZeebeDb zeebeDb = snapshotController.openDb();
     LOG.info(
@@ -173,7 +170,7 @@ public class StreamProcessorController extends Actor {
 
     final long snapshotPosition = streamProcessor.getLastSuccessfulProcessedPositionFromState();
     logStreamReader.seekToFirstEvent(); // reset seek position
-    if (!recovered.isInitial()) {
+    if (lowerBoundSnapshotPosition > -1) {
       final boolean found = logStreamReader.seek(snapshotPosition);
       if (found && logStreamReader.hasNext()) {
         logStreamReader.seek(snapshotPosition + 1);
@@ -181,23 +178,9 @@ public class StreamProcessorController extends Actor {
         throw new IllegalStateException(
             String.format(ERROR_MESSAGE_RECOVER_FROM_SNAPSHOT_FAILED, snapshotPosition, getName()));
       }
-
-      snapshotController.purgeAllExcept(recovered);
     }
 
     return snapshotPosition;
-  }
-
-  private boolean validateSnapshot(final StateSnapshotMetadata metadata) {
-    final boolean wasFound = logStreamReader.seek(metadata.getLastWrittenEventPosition());
-    boolean isValid = false;
-
-    if (wasFound && logStreamReader.hasNext()) {
-      final LoggedEvent event = logStreamReader.next();
-      isValid = event.getRaftTerm() == metadata.getLastWrittenEventTerm();
-    }
-
-    return isValid;
   }
 
   private void onRecovered() {
@@ -207,11 +190,12 @@ public class StreamProcessorController extends Actor {
     asyncSnapshotDirector =
         new AsyncSnapshotDirector(
             streamProcessorContext.name,
+            streamProcessorContext.snapshotPeriod,
+            processingStateMachine::getLastProcessedPositionAsync,
             processingStateMachine::getLastWrittenPositionAsync,
             snapshotController,
             logStream::registerOnCommitPositionUpdatedCondition,
             logStream::removeOnCommitPositionUpdatedCondition,
-            logStream::getTerm,
             logStream::getCommitPosition);
 
     actorScheduler.submitActor(asyncSnapshotDirector);
@@ -248,29 +232,14 @@ public class StreamProcessorController extends Actor {
     if (!isFailed()) {
       actor.run(
           () -> {
-            final LogStream logStream = streamProcessorContext.logStream;
-
             if (asyncSnapshotDirector != null) {
-              LOG.info("On closing, will try to enforce snapshot creation.");
-              actor.runOnCompletionBlockingCurrentPhase(
-                  asyncSnapshotDirector.enforceSnapshotCreation(
-                      processingStateMachine.getLastWrittenEventPosition(),
-                      logStream.getCommitPosition(),
-                      logStream.getTerm()),
-                  (v, ex) -> {
-                    try {
-                      asyncSnapshotDirector.close();
-                      snapshotController.close();
-                    } catch (Exception e) {
-                      LOG.error("Error on closing snapshotController.", e);
-                    }
-                  });
-            } else {
-              try {
-                snapshotController.close();
-              } catch (Exception e) {
-                LOG.error("Error on closing snapshotController.", e);
-              }
+              asyncSnapshotDirector.close();
+            }
+
+            try {
+              snapshotController.close();
+            } catch (Exception e) {
+              LOG.error("Error on closing snapshotController.", e);
             }
           });
     }
