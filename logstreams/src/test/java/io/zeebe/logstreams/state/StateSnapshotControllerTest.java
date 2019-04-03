@@ -55,7 +55,7 @@ public class StateSnapshotControllerTest {
   @Test
   public void shouldThrowExceptionOnTakeSnapshotIfClosed() throws Exception {
     // given
-    final StateSnapshotMetadata metadata = new StateSnapshotMetadata(1, 1, 1, false);
+    final StateSnapshotMetadata metadata = new StateSnapshotMetadata(1, 1, false);
 
     // then
     assertThat(snapshotController.isDbOpened()).isFalse();
@@ -66,7 +66,7 @@ public class StateSnapshotControllerTest {
   @Test
   public void shouldNotTakeSnapshotOnPreExistingLocation() throws Exception {
     // given
-    final StateSnapshotMetadata metadata = new StateSnapshotMetadata(1, 1, 1, false);
+    final StateSnapshotMetadata metadata = new StateSnapshotMetadata(1, 1, false);
 
     // when
     snapshotController.openDb();
@@ -83,7 +83,7 @@ public class StateSnapshotControllerTest {
     final String key = "test";
     final int value = 3;
     final RocksDBWrapper wrapper = new RocksDBWrapper();
-    final StateSnapshotMetadata metadata = new StateSnapshotMetadata(1, 1, 1, false);
+    final StateSnapshotMetadata metadata = new StateSnapshotMetadata(1, 1, false);
 
     // when
     wrapper.wrap(snapshotController.openDb());
@@ -117,7 +117,7 @@ public class StateSnapshotControllerTest {
     final int term = 2;
     final long commitPosition = 3L;
     final StateSnapshotMetadata initial =
-        new StateSnapshotMetadata(1L, commitPosition + 1, term, false);
+        new StateSnapshotMetadata(commitPosition + 1, term, false);
     final StateSnapshotMetadata expected = StateSnapshotMetadata.createInitial(term);
 
     // when
@@ -161,13 +161,10 @@ public class StateSnapshotControllerTest {
     // given
     final String key = "test";
     final int value = 1;
-    final StateSnapshotMetadata good = new StateSnapshotMetadata(1, 1, 1, false);
+    final StateSnapshotMetadata good = new StateSnapshotMetadata(1, 1, false);
     final StateSnapshotMetadata bad =
         new StateSnapshotMetadata(
-            good.getLastSuccessfulProcessedEventPosition() + 1,
-            good.getLastWrittenEventPosition() + 1,
-            good.getLastWrittenEventTerm(),
-            false);
+            good.getLastWrittenEventPosition() + 1, good.getLastWrittenEventTerm(), false);
     final RocksDBWrapper wrapper = new RocksDBWrapper();
 
     // when
@@ -200,11 +197,11 @@ public class StateSnapshotControllerTest {
     final String key = "test";
     final StateSnapshotMetadata[] others =
         new StateSnapshotMetadata[] {
-          new StateSnapshotMetadata(1, 2, 0, false),
-          new StateSnapshotMetadata(3, 4, 0, false),
-          new StateSnapshotMetadata(7, 8, 0, false)
+          new StateSnapshotMetadata(2, 0, false),
+          new StateSnapshotMetadata(4, 0, false),
+          new StateSnapshotMetadata(8, 0, false)
         };
-    final StateSnapshotMetadata expected = new StateSnapshotMetadata(5, 6, 0, false);
+    final StateSnapshotMetadata expected = new StateSnapshotMetadata(6, 0, false);
     final RocksDBWrapper wrapper = new RocksDBWrapper();
 
     // when
@@ -241,7 +238,7 @@ public class StateSnapshotControllerTest {
     final String key = "test";
     final StateSnapshotMetadata[] snapshots =
         new StateSnapshotMetadata[] {
-          new StateSnapshotMetadata(1, 2, 0, false), new StateSnapshotMetadata(3, 4, 0, false)
+          new StateSnapshotMetadata(2, 0, false), new StateSnapshotMetadata(4, 0, false)
         };
     final RocksDBWrapper wrapper = new RocksDBWrapper();
 
@@ -253,7 +250,7 @@ public class StateSnapshotControllerTest {
     snapshotController.takeSnapshot(snapshots[1]);
     wrapper.putInt(key, 3);
     snapshotController.close();
-    snapshotController.purgeAll(s -> s.getLastSuccessfulProcessedEventPosition() == 3);
+    snapshotController.purgeAll(s -> s.getLastWrittenEventPosition() == 4);
 
     // then
     assertThat(storage.list()).hasSize(1);
@@ -277,7 +274,7 @@ public class StateSnapshotControllerTest {
     final String key = "test";
     final StateSnapshotMetadata[] snapshots =
         new StateSnapshotMetadata[] {
-          new StateSnapshotMetadata(1, 2, 0, false), new StateSnapshotMetadata(3, 4, 0, false)
+          new StateSnapshotMetadata(2, 0, false), new StateSnapshotMetadata(4, 0, false)
         };
     final RocksDBWrapper wrapper = new RocksDBWrapper();
 

@@ -39,7 +39,7 @@ public class StreamProcessorController extends Actor {
   private static final Logger LOG = Loggers.LOGSTREAMS_LOGGER;
 
   private static final String ERROR_MESSAGE_RECOVER_FROM_SNAPSHOT_FAILED =
-      "Expected to find event with the snapshot position in log stream, but nothing was found. Failed to recover with processor '%s'.";
+      "Expected to find event with the snapshot position %s in log stream, but nothing was found. Failed to recover with processor '%s'.";
 
   private final StreamProcessorFactory streamProcessorFactory;
   private StreamProcessor streamProcessor;
@@ -63,7 +63,7 @@ public class StreamProcessorController extends Actor {
   private StreamProcessorMetrics metrics;
   private DbContext dbContext;
   private ProcessingStateMachine processingStateMachine;
-  private SnapshotStateMachine snapshotStateMachine;
+  private AsyncSnapshotDirector asyncSnapshotDirector;
 
   public StreamProcessorController(final StreamProcessorContext context) {
     this.streamProcessorContext = context;
@@ -110,14 +110,7 @@ public class StreamProcessorController extends Actor {
     try {
       LOG.info("Recovering state of partition {} from snapshot", partitionId);
       snapshotPosition = recoverFromSnapshot(logStream.getCommitPosition(), logStream.getTerm());
-      final ZeebeDb zeebeDb = snapshotController.openDb();
-      LOG.info(
-          "Recovered state of partition {} from snapshot at position {}",
-          partitionId,
-          snapshotPosition);
 
-      dbContext = zeebeDb.createContext();
-      streamProcessor = streamProcessorFactory.createProcessor(zeebeDb, dbContext);
       streamProcessor.onOpen(streamProcessorContext);
     } catch (final Exception e) {
       onFailure();
@@ -168,8 +161,17 @@ public class StreamProcessorController extends Actor {
   private long recoverFromSnapshot(final long commitPosition, final int term) throws Exception {
     final StateSnapshotMetadata recovered =
         snapshotController.recover(commitPosition, term, this::validateSnapshot);
-    final long snapshotPosition = recovered.getLastSuccessfulProcessedEventPosition();
 
+    final ZeebeDb zeebeDb = snapshotController.openDb();
+    LOG.info(
+        "Recovered state of partition {} from snapshot at position {}",
+        partitionId,
+        snapshotPosition);
+
+    dbContext = zeebeDb.createContext();
+    streamProcessor = streamProcessorFactory.createProcessor(zeebeDb, dbContext);
+
+    final long snapshotPosition = streamProcessor.getLastSuccessfulProcessedPositionFromState();
     logStreamReader.seekToFirstEvent(); // reset seek position
     if (!recovered.isInitial()) {
       final boolean found = logStreamReader.seek(snapshotPosition);
@@ -177,7 +179,7 @@ public class StreamProcessorController extends Actor {
         logStreamReader.seek(snapshotPosition + 1);
       } else {
         throw new IllegalStateException(
-            String.format(ERROR_MESSAGE_RECOVER_FROM_SNAPSHOT_FAILED, getName()));
+            String.format(ERROR_MESSAGE_RECOVER_FROM_SNAPSHOT_FAILED, snapshotPosition, getName()));
       }
 
       snapshotController.purgeAllExcept(recovered);
@@ -202,9 +204,9 @@ public class StreamProcessorController extends Actor {
     phase = Phase.PROCESSING;
 
     final LogStream logStream = streamProcessorContext.getLogStream();
-    snapshotStateMachine =
-        new SnapshotStateMachine(
-            processingStateMachine::getLastProcessedPositionAsync,
+    asyncSnapshotDirector =
+        new AsyncSnapshotDirector(
+            streamProcessorContext.name,
             processingStateMachine::getLastWrittenPositionAsync,
             snapshotController,
             logStream::registerOnCommitPositionUpdatedCondition,
@@ -212,7 +214,7 @@ public class StreamProcessorController extends Actor {
             logStream::getTerm,
             logStream::getCommitPosition);
 
-    actorScheduler.submitActor(snapshotStateMachine);
+    actorScheduler.submitActor(asyncSnapshotDirector);
 
     onCommitPositionUpdatedCondition =
         actor.onCondition(
@@ -248,16 +250,16 @@ public class StreamProcessorController extends Actor {
           () -> {
             final LogStream logStream = streamProcessorContext.logStream;
 
-            if (snapshotStateMachine != null) {
+            if (asyncSnapshotDirector != null) {
               LOG.info("On closing, will try to enforce snapshot creation.");
               actor.runOnCompletionBlockingCurrentPhase(
-                  snapshotStateMachine.enforceSnapshotCreation(
-                      processingStateMachine.getLastSuccessfulProcessedEventPosition(),
+                  asyncSnapshotDirector.enforceSnapshotCreation(
                       processingStateMachine.getLastWrittenEventPosition(),
                       logStream.getCommitPosition(),
                       logStream.getTerm()),
                   (v, ex) -> {
                     try {
+                      asyncSnapshotDirector.close();
                       snapshotController.close();
                     } catch (Exception e) {
                       LOG.error("Error on closing snapshotController.", e);

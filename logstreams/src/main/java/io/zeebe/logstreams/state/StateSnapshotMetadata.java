@@ -15,16 +15,11 @@
  */
 package io.zeebe.logstreams.state;
 
-import io.zeebe.logstreams.impl.Loggers;
 import java.util.Objects;
-import org.slf4j.Logger;
 
 public class StateSnapshotMetadata implements Comparable<StateSnapshotMetadata> {
-  public static final long INITIAL_LAST_PROCESSED_EVENT_POSITION = -1;
   public static final long INITIAL_LAST_WRITTEN_EVENT_POSITION = -1;
-  private static final Logger LOG = Loggers.ROCKSDB_LOGGER;
 
-  private final long lastSuccessfulProcessedEventPosition;
   private final long lastWrittenEventPosition;
   private final int lastWrittenEventTerm;
   private final boolean exists;
@@ -34,32 +29,18 @@ public class StateSnapshotMetadata implements Comparable<StateSnapshotMetadata> 
    * @return a snapshot metadata based on nothing but the term
    */
   public static StateSnapshotMetadata createInitial(int term) {
-    return new StateSnapshotMetadata(
-        INITIAL_LAST_PROCESSED_EVENT_POSITION, INITIAL_LAST_WRITTEN_EVENT_POSITION, term, false);
+    return new StateSnapshotMetadata(INITIAL_LAST_WRITTEN_EVENT_POSITION, term, false);
   }
 
   public StateSnapshotMetadata(long lastWrittenEventPosition) {
-    this(0, lastWrittenEventPosition, 0, true);
+    this(lastWrittenEventPosition, 0, true);
   }
 
   public StateSnapshotMetadata(
-      long lastSuccessfulProcessedEventPosition,
-      long lastWrittenEventPosition,
-      int lastWrittenEventTerm,
-      boolean exists) {
-    this.lastSuccessfulProcessedEventPosition = lastSuccessfulProcessedEventPosition;
+      long lastWrittenEventPosition, int lastWrittenEventTerm, boolean exists) {
     this.lastWrittenEventPosition = lastWrittenEventPosition;
     this.lastWrittenEventTerm = lastWrittenEventTerm;
     this.exists = exists;
-  }
-
-  /**
-   * Returns the last successful processed event position when the state was last updated.
-   *
-   * @return last successful processed event position
-   */
-  public long getLastSuccessfulProcessedEventPosition() {
-    return lastSuccessfulProcessedEventPosition;
   }
 
   /**
@@ -86,8 +67,7 @@ public class StateSnapshotMetadata implements Comparable<StateSnapshotMetadata> 
   }
 
   public boolean isInitial() {
-    return getLastSuccessfulProcessedEventPosition() == INITIAL_LAST_PROCESSED_EVENT_POSITION
-        && getLastWrittenEventPosition() == INITIAL_LAST_WRITTEN_EVENT_POSITION;
+    return getLastWrittenEventPosition() == INITIAL_LAST_WRITTEN_EVENT_POSITION;
   }
 
   @Override
@@ -98,27 +78,19 @@ public class StateSnapshotMetadata implements Comparable<StateSnapshotMetadata> 
 
     final StateSnapshotMetadata other = (StateSnapshotMetadata) obj;
 
-    return getLastSuccessfulProcessedEventPosition()
-            == other.getLastSuccessfulProcessedEventPosition()
-        && getLastWrittenEventPosition() == other.getLastWrittenEventPosition()
+    return getLastWrittenEventPosition() == other.getLastWrittenEventPosition()
         && getLastWrittenEventTerm() == other.getLastWrittenEventTerm();
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(
-        getLastSuccessfulProcessedEventPosition(),
-        getLastWrittenEventPosition(),
-        getLastWrittenEventTerm(),
-        exists());
+    return Objects.hash(getLastWrittenEventPosition(), getLastWrittenEventTerm(), exists());
   }
 
   @Override
   public String toString() {
     return "StateSnapshotMetadata{"
-        + "lastSuccessfulProcessedEventPosition="
-        + getLastSuccessfulProcessedEventPosition()
-        + ", lastWrittenEventPosition="
+        + "lastWrittenEventPosition="
         + getLastWrittenEventPosition()
         + ", lastWrittenEventTerm="
         + getLastWrittenEventTerm()
@@ -129,15 +101,9 @@ public class StateSnapshotMetadata implements Comparable<StateSnapshotMetadata> 
 
   @Override
   public int compareTo(StateSnapshotMetadata o) {
-    int result =
-        Long.compare(
-            getLastSuccessfulProcessedEventPosition(), o.getLastSuccessfulProcessedEventPosition());
-
+    int result = Integer.compare(getLastWrittenEventTerm(), o.getLastWrittenEventTerm());
     if (result == 0) {
-      result = Integer.compare(getLastWrittenEventTerm(), o.getLastWrittenEventTerm());
-      if (result == 0) {
-        result = Long.compare(getLastWrittenEventPosition(), o.getLastWrittenEventPosition());
-      }
+      result = Long.compare(getLastWrittenEventPosition(), o.getLastWrittenEventPosition());
     }
 
     return result;

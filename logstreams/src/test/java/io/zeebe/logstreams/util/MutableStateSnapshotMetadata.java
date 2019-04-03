@@ -18,34 +18,16 @@ package io.zeebe.logstreams.util;
 import io.zeebe.logstreams.state.StateSnapshotMetadata;
 
 public class MutableStateSnapshotMetadata extends StateSnapshotMetadata {
-  private long lastSuccessfulProcessedEventPosition;
   private long lastWrittenEventPosition;
   private int lastWrittenEventTerm;
   private boolean exists;
 
   public MutableStateSnapshotMetadata(
-      long lastSuccessfulProcessedEventPosition,
-      long lastWrittenEventPosition,
-      int lastWrittenEventTerm,
-      boolean exists) {
-    super(
-        lastSuccessfulProcessedEventPosition,
-        lastWrittenEventPosition,
-        lastWrittenEventTerm,
-        exists);
-    this.lastSuccessfulProcessedEventPosition = lastSuccessfulProcessedEventPosition;
+      long lastWrittenEventPosition, int lastWrittenEventTerm, boolean exists) {
+    super(lastWrittenEventPosition, lastWrittenEventTerm, exists);
     this.lastWrittenEventPosition = lastWrittenEventPosition;
     this.lastWrittenEventTerm = lastWrittenEventTerm;
     this.exists = exists;
-  }
-
-  @Override
-  public long getLastSuccessfulProcessedEventPosition() {
-    return lastSuccessfulProcessedEventPosition;
-  }
-
-  public void setLastSuccessfulProcessedEventPosition(long lastSuccessfulProcessedEventPosition) {
-    this.lastSuccessfulProcessedEventPosition = lastSuccessfulProcessedEventPosition;
   }
 
   @Override

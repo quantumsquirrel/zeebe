@@ -15,6 +15,7 @@
  */
 package io.zeebe.logstreams.processor;
 
+import static io.zeebe.logstreams.processor.AsyncSnapshotDirector.INITIAL_POSITION;
 import static io.zeebe.test.util.TestUtil.waitUntil;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -58,7 +59,7 @@ public class AsyncSnapshotingTest {
 
   private StateSnapshotController snapshotController;
   private LogStream logStream;
-  private SnapshotStateMachine snapshotStateMachine;
+  private AsyncSnapshotDirector asyncSnapshotDirector;
 
   @Before
   public void setup() throws IOException {
@@ -77,32 +78,20 @@ public class AsyncSnapshotingTest {
     logStream = spy(logStreamRule.getLogStream());
     final ActorScheduler actorScheduler = logStreamRule.getActorScheduler();
 
-    final Supplier<ActorFuture<Long>> positionSupplier = mock(Supplier.class);
-    when(positionSupplier.get())
-        // start snapshot A
-        .thenReturn(CompletableActorFuture.completed(25L))
-        // end snapshot A
-        .thenReturn(CompletableActorFuture.completed(32L))
-
-        // start snapshot B
-        .thenReturn(CompletableActorFuture.completed(35L))
-        // end snapshot B
-        .thenReturn(CompletableActorFuture.completed(41L));
-
     final Supplier<ActorFuture<Long>> writtenSupplier = mock(Supplier.class);
     when(writtenSupplier.get())
         .thenReturn(CompletableActorFuture.completed(99L), CompletableActorFuture.completed(100L));
 
-    snapshotStateMachine =
-        new SnapshotStateMachine(
-            positionSupplier,
+    asyncSnapshotDirector =
+        new AsyncSnapshotDirector(
+            "processor-1",
             writtenSupplier,
             snapshotController,
             actorCondition -> logStream.registerOnCommitPositionUpdatedCondition(actorCondition),
             actorCondition -> logStream.removeOnCommitPositionUpdatedCondition(actorCondition),
             () -> logStream.getTerm(),
             () -> logStream.getCommitPosition());
-    actorScheduler.submitActor(snapshotStateMachine).join();
+    actorScheduler.submitActor(asyncSnapshotDirector).join();
   }
 
   @Test
@@ -117,7 +106,8 @@ public class AsyncSnapshotingTest {
     inOrder
         .verify(logStream, timeout(500L).times(1))
         .registerOnCommitPositionUpdatedCondition(any());
-    inOrder.verify(snapshotController, timeout(500L).times(1)).takeSnapshotForPosition(25L);
+    inOrder.verify(snapshotController, timeout(500L).times(1)).takeTempSnapshot();
+    inOrder.verify(logStream, timeout(500L).times(1)).getCommitPosition();
     inOrder.verifyNoMoreInteractions();
   }
 
@@ -127,7 +117,7 @@ public class AsyncSnapshotingTest {
     logStreamRule.getClock().addTime(Duration.ofMinutes(1));
 
     // when
-    waitUntil(() -> snapshotStateMachine.pendingSnapshots.size() > 0);
+    waitUntil(() -> asyncSnapshotDirector.lastWrittenEventPosition != INITIAL_POSITION);
     logStreamRule.setCommitPosition(100L);
 
     // then
@@ -135,67 +125,64 @@ public class AsyncSnapshotingTest {
     inOrder
         .verify(logStream, timeout(500L).times(1))
         .registerOnCommitPositionUpdatedCondition(any());
-    inOrder.verify(snapshotController, timeout(500L).times(1)).takeSnapshotForPosition(25L);
+    inOrder.verify(snapshotController, timeout(500L).times(1)).takeTempSnapshot();
 
-    inOrder.verify(logStream, timeout(500L).times(1)).getCommitPosition();
+    inOrder.verify(logStream, timeout(500L).times(2)).getCommitPosition();
     inOrder.verify(logStream, timeout(500L).times(1)).getTerm();
 
-    final StateSnapshotMetadata snapshotMetadata = new StateSnapshotMetadata(32L, 99L, 0, false);
-    inOrder
-        .verify(snapshotController, timeout(500L).times(1))
-        .moveSnapshot(eq(25L), eq(snapshotMetadata));
+    final StateSnapshotMetadata snapshotMetadata = new StateSnapshotMetadata(99L, 0, false);
+    inOrder.verify(snapshotController, timeout(500L).times(1)).moveSnapshot(eq(snapshotMetadata));
 
     inOrder.verify(snapshotController, timeout(500L).times(1)).ensureMaxSnapshotCount(3);
     inOrder.verifyNoMoreInteractions();
   }
 
   @Test
-  public void shouldAddMoreThenOneSnapshotPending() {
+  public void shouldNotTakeMoreThenOneSnapshot() {
     // given
+    logStreamRule.getClock().addTime(Duration.ofMinutes(1));
+    waitUntil(() -> asyncSnapshotDirector.lastWrittenEventPosition != 0);
 
     // when
     logStreamRule.getClock().addTime(Duration.ofMinutes(1));
-    waitUntil(() -> snapshotStateMachine.pendingSnapshots.size() > 0);
-    logStreamRule.getClock().addTime(Duration.ofMinutes(1));
-    waitUntil(() -> snapshotStateMachine.pendingSnapshots.size() > 1);
 
     // then
     final InOrder inOrder = Mockito.inOrder(snapshotController, logStream);
     inOrder
         .verify(logStream, timeout(500L).times(1))
         .registerOnCommitPositionUpdatedCondition(any());
-
-    inOrder.verify(snapshotController, timeout(500L).times(1)).takeSnapshotForPosition(25L);
-    inOrder.verify(snapshotController, timeout(500L).times(1)).takeSnapshotForPosition(35L);
+    inOrder.verify(snapshotController, timeout(500L).times(1)).takeTempSnapshot();
+    inOrder.verify(logStream, timeout(500L).times(1)).getCommitPosition();
     inOrder.verifyNoMoreInteractions();
   }
 
   @Test
-  public void shouldValidateMoreThenOneSnapshot() throws Exception {
+  public void shouldTakeSnapshotsOneByOne() throws Exception {
     // given
     logStreamRule.getClock().addTime(Duration.ofMinutes(1));
-    waitUntil(() -> snapshotStateMachine.pendingSnapshots.size() > 0);
-    logStreamRule.getClock().addTime(Duration.ofMinutes(1));
-    waitUntil(() -> snapshotStateMachine.pendingSnapshots.size() > 1);
+    waitUntil(() -> asyncSnapshotDirector.lastWrittenEventPosition != INITIAL_POSITION);
+    logStreamRule.setCommitPosition(99L);
+    waitUntil(() -> !asyncSnapshotDirector.pendingSnapshot);
 
     // when
+    logStreamRule.getClock().addTime(Duration.ofMinutes(1));
+    waitUntil(() -> asyncSnapshotDirector.lastWrittenEventPosition > 99);
     logStreamRule.setCommitPosition(100L);
 
     // then
     final InOrder inOrder = Mockito.inOrder(snapshotController, logStream);
 
-    inOrder.verify(logStream, timeout(500L).times(1)).getCommitPosition();
+    inOrder.verify(logStream, timeout(500L).times(2)).getCommitPosition();
     inOrder.verify(logStream, timeout(500L).times(1)).getTerm();
 
-    StateSnapshotMetadata snapshotMetadata = new StateSnapshotMetadata(32L, 99L, 0, false);
-    inOrder
-        .verify(snapshotController, timeout(500L).times(1))
-        .moveSnapshot(eq(25L), eq(snapshotMetadata));
+    StateSnapshotMetadata snapshotMetadata = new StateSnapshotMetadata(99L, 0, false);
+    inOrder.verify(snapshotController, timeout(500L).times(1)).moveSnapshot(eq(snapshotMetadata));
+    inOrder.verify(snapshotController, timeout(500L).times(1)).ensureMaxSnapshotCount(3);
 
-    snapshotMetadata = new StateSnapshotMetadata(41L, 100L, 0, false);
-    inOrder
-        .verify(snapshotController, timeout(500L).times(1))
-        .moveSnapshot(eq(35L), eq(snapshotMetadata));
+    inOrder.verify(logStream, timeout(500L).times(2)).getCommitPosition();
+    inOrder.verify(logStream, timeout(500L).times(1)).getTerm();
+    snapshotMetadata = new StateSnapshotMetadata(100L, 0, false);
+    inOrder.verify(snapshotController, timeout(500L).times(1)).moveSnapshot(eq(snapshotMetadata));
 
     inOrder.verify(snapshotController, timeout(500L).times(1)).ensureMaxSnapshotCount(3);
 

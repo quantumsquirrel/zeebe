@@ -57,20 +57,14 @@ public class StateStorage {
   public File getSnapshotDirectoryFor(final StateSnapshotMetadata metadata) {
     final String path =
         String.format(
-            "%d%s%d%s%d",
-            metadata.getLastSuccessfulProcessedEventPosition(),
-            SEPARATOR,
-            metadata.getLastWrittenEventPosition(),
-            SEPARATOR,
-            metadata.getLastWrittenEventTerm());
+            "%d%s%d",
+            metadata.getLastWrittenEventPosition(), SEPARATOR, metadata.getLastWrittenEventTerm());
 
     return new File(snapshotsDirectory, path);
   }
 
-  public File getSnapshotDirectoryFor(final long currentPosition) {
-    final String path = String.format("%d", currentPosition);
-
-    return new File(snapshotsDirectory, path);
+  public File getTempSnapshotDirectory() {
+    return new File(snapshotsDirectory, "tmp/");
   }
 
   public StateSnapshotMetadata getSnapshotMetadata(final File folder) {
@@ -83,13 +77,10 @@ public class StateStorage {
     }
 
     final String name = folder.getName();
-    final String[] parts = name.split(SEPARATOR, 3);
+    final String[] parts = name.split(SEPARATOR, 2);
 
     return new StateSnapshotMetadata(
-        Long.parseLong(parts[0]),
-        Long.parseLong(parts[1]),
-        Integer.parseInt(parts[2]),
-        folder.exists());
+        Long.parseLong(parts[0]), Integer.parseInt(parts[1]), folder.exists());
   }
 
   public List<StateSnapshotMetadata> list() {

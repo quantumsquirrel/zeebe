@@ -19,7 +19,6 @@ import static io.zeebe.test.util.TestUtil.waitUntil;
 import static io.zeebe.util.buffer.BufferUtil.wrapString;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
@@ -407,20 +406,16 @@ public class StreamProcessorControllerTest {
   @Test
   public void shouldWriteSnapshot() throws Exception {
     // given
-    final ArgumentCaptor<Long> position = ArgumentCaptor.forClass(Long.class);
     final ArgumentCaptor<StateSnapshotMetadata> metadata =
         ArgumentCaptor.forClass(StateSnapshotMetadata.class);
 
     // when
     final long lastEventPosition = writeEventAndWaitUntilProcessed(EVENT_1);
     logStreamRule.getClock().addTime(SNAPSHOT_INTERVAL);
-    final long newLastEventPosition = writeEventAndWaitUntilProcessed(EVENT_1);
+    writeEventAndWaitUntilProcessed(EVENT_1);
 
     // then
-    verify(snapshotController, timeout(5000).times(1))
-        .moveSnapshot(position.capture(), metadata.capture());
-    assertThat(metadata.getValue().getLastSuccessfulProcessedEventPosition())
-        .isEqualTo(lastEventPosition);
+    verify(snapshotController, timeout(5000).times(1)).moveSnapshot(metadata.capture());
     assertThat(metadata.getValue().getLastWrittenEventPosition()).isEqualTo(lastEventPosition);
     assertThat(metadata.getValue().getLastWrittenEventTerm())
         .isEqualTo(logStreamRule.getLogStream().getTerm());
@@ -439,8 +434,8 @@ public class StreamProcessorControllerTest {
     }
 
     // then
-    verify(snapshotController, timeout(5000).times(5)).moveSnapshot(anyLong(), any());
-    verify(snapshotController, timeout(5000).times(10)).ensureMaxSnapshotCount(3);
+    verify(snapshotController, timeout(5000).times(5)).moveSnapshot(any());
+    verify(snapshotController, timeout(5000).times(5)).ensureMaxSnapshotCount(3);
 
     assertThat(stateStorage.listSorted()).hasSize(3);
     assertThat(stateStorage.list()).hasSize(3);
@@ -470,8 +465,6 @@ public class StreamProcessorControllerTest {
 
     // then
     verify(snapshotController, timeout(5000).times(1)).takeSnapshot(args.capture());
-    assertThat(args.getValue().getLastSuccessfulProcessedEventPosition())
-        .isEqualTo(lastEventPosition);
     assertThat(args.getValue().getLastWrittenEventPosition()).isEqualTo(lastEventPosition);
     assertThat(args.getValue().getLastWrittenEventTerm())
         .isEqualTo(logStreamRule.getLogStream().getTerm());
@@ -481,18 +474,9 @@ public class StreamProcessorControllerTest {
   public void shouldNotRecoverFromSnapshotWithInvalidLastWrittenTerm() throws Exception {
     // given
     final long lastProcessedEventPosition = writeEventAndWaitUntilProcessed(EVENT_1);
-    final StateSnapshotMetadata valid =
-        new StateSnapshotMetadata(
-            lastProcessedEventPosition,
-            lastProcessedEventPosition,
-            logStreamRule.getLogStream().getTerm(),
-            false);
     final StateSnapshotMetadata invalid =
         new StateSnapshotMetadata(
-            lastProcessedEventPosition,
-            lastProcessedEventPosition,
-            logStreamRule.getLogStream().getTerm() + 1,
-            false);
+            lastProcessedEventPosition, logStreamRule.getLogStream().getTerm() + 1, false);
 
     // when
     setState("valid");
@@ -512,19 +496,10 @@ public class StreamProcessorControllerTest {
   @Test
   public void shouldNotRecoverFromSnapshotWithUncommittedLastWrittenEvent() throws Exception {
     // given
-    final long lastProcessedEventPosition = writeEventAndWaitUntilProcessed(EVENT_1);
-    final StateSnapshotMetadata valid =
-        new StateSnapshotMetadata(
-            lastProcessedEventPosition,
-            lastProcessedEventPosition,
-            logStreamRule.getLogStream().getTerm(),
-            false);
+    writeEventAndWaitUntilProcessed(EVENT_1);
     final StateSnapshotMetadata invalid =
         new StateSnapshotMetadata(
-            lastProcessedEventPosition,
-            logStreamRule.getCommitPosition() + 1,
-            logStreamRule.getLogStream().getTerm(),
-            false);
+            logStreamRule.getCommitPosition() + 1, logStreamRule.getLogStream().getTerm(), false);
 
     // when
     setState("valid");
@@ -741,7 +716,7 @@ public class StreamProcessorControllerTest {
             .actorScheduler(logStreamRule.getActorScheduler())
             .serviceContainer(logStreamRule.getServiceContainer())
             .snapshotController(snapshotController)
-            .streamProcessorFactory(((zeebeDb, dbContext) -> streamProcessor))
+            .streamProcessorFactory(this::createStreamProcessor)
             .readOnly(true)
             .build()
             .join()
@@ -787,7 +762,8 @@ public class StreamProcessorControllerTest {
     // given
     final CountDownLatch latch = new CountDownLatch(1);
     final MutableStateSnapshotMetadata expectedState =
-        new MutableStateSnapshotMetadata(-1, -1, -1, true);
+        new MutableStateSnapshotMetadata(-1, -1, true);
+
     // when
     changeMockInActorContext(
         () -> {
@@ -808,7 +784,7 @@ public class StreamProcessorControllerTest {
               .when(eventProcessor)
               .executeSideEffects();
         });
-    expectedState.setLastSuccessfulProcessedEventPosition(writeEventAndWaitUntilProcessed(EVENT_1));
+    writeEventAndWaitUntilProcessed(EVENT_1);
 
     // when
     latch.await();
@@ -846,19 +822,19 @@ public class StreamProcessorControllerTest {
             .eventFilter(eventFilter)
             .serviceContainer(logStreamRule.getServiceContainer())
             .snapshotController(snapshotController)
-            .streamProcessorFactory(
-                (db, dbContext) -> {
-                  streamProcessor = RecordingStreamProcessor.createSpy(db);
-                  eventProcessor = streamProcessor.getEventProcessorSpy();
-                  columnFamily =
-                      db.createColumnFamily(DefaultColumnFamily.DEFAULT, dbContext, key, value);
-                  return streamProcessor;
-                })
+            .streamProcessorFactory(this::createStreamProcessor)
             .snapshotPeriod(SNAPSHOT_INTERVAL)
             .build()
             .join();
 
     streamProcessorController = streamProcessorService.getController();
+  }
+
+  private StreamProcessor createStreamProcessor(ZeebeDb zeebeDb, DbContext dbContext) {
+    streamProcessor = RecordingStreamProcessor.createSpy(zeebeDb);
+    eventProcessor = streamProcessor.getEventProcessorSpy();
+    columnFamily = zeebeDb.createColumnFamily(DefaultColumnFamily.DEFAULT, dbContext, key, value);
+    return streamProcessor;
   }
 
   private void changeMockInActorContext(Runnable runnable) {

@@ -54,30 +54,28 @@ public class StateSnapshotController implements SnapshotController {
   }
 
   @Override
-  public void takeSnapshotForPosition(final long processingPos) {
+  public void takeTempSnapshot() {
     if (db == null) {
       throw new IllegalStateException("Cannot create snapshot of not open database.");
     }
 
-    final File snapshotDir = storage.getSnapshotDirectoryFor(processingPos);
-    if (snapshotDir.exists()) {
-      return;
-    }
-
-    LOG.info("Take snapshot for processing position {}.", processingPos);
+    final File snapshotDir = storage.getTempSnapshotDirectory();
+    LOG.debug("Take temporary snapshot and write into {}.", snapshotDir.getAbsolutePath());
     db.createSnapshot(snapshotDir);
   }
 
   @Override
-  public void moveSnapshot(final long processingPos, final StateSnapshotMetadata metadata) {
+  public void moveSnapshot(final StateSnapshotMetadata metadata) {
     if (db == null) {
       throw new IllegalStateException("Cannot create snapshot of not open database.");
     }
 
-    final File previousLocation = storage.getSnapshotDirectoryFor(processingPos);
+    final File previousLocation = storage.getTempSnapshotDirectory();
     if (!previousLocation.exists()) {
       throw new IllegalStateException(
-          "Snapshot directory does not exist for position " + processingPos);
+          String.format(
+              "Temporary snapshot directory %s does not exist.",
+              previousLocation.getAbsolutePath()));
     }
 
     final File snapshotDir = storage.getSnapshotDirectoryFor(metadata);
@@ -85,9 +83,9 @@ public class StateSnapshotController implements SnapshotController {
       return;
     }
 
-    LOG.info(
-        "Snapshot for position {} is valid. Move snapshot from {} to {}.",
-        processingPos,
+    LOG.debug(
+        "Snapshot for last written event position {} is valid. Move snapshot from {} to {}.",
+        metadata.getLastWrittenEventPosition(),
         previousLocation.getAbsolutePath(),
         snapshotDir.getAbsolutePath());
 
@@ -155,7 +153,7 @@ public class StateSnapshotController implements SnapshotController {
   public void ensureMaxSnapshotCount(int maxSnapshotCount) throws Exception {
     final List<String> snapshotPaths = storage.listSorted();
     if (snapshotPaths.size() > maxSnapshotCount) {
-      LOG.info(
+      LOG.debug(
           "Ensure max snapshot count {}, will delete {} snapshot(s).",
           maxSnapshotCount,
           snapshotPaths.size() - maxSnapshotCount);
@@ -164,10 +162,10 @@ public class StateSnapshotController implements SnapshotController {
 
       for (final String snapshot : snapshotsToRemove) {
         FileUtil.deleteFolder(snapshot);
-        LOG.trace("Purged snapshot {}", snapshot);
+        LOG.debug("Purged snapshot {}", snapshot);
       }
     } else {
-      LOG.info(
+      LOG.debug(
           "Tried to ensure max snapshot count {}, nothing to do snapshot count is {}.",
           maxSnapshotCount,
           snapshotPaths.size());

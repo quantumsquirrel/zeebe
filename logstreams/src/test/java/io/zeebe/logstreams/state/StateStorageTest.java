@@ -31,7 +31,6 @@ public class StateStorageTest {
   @Rule public TemporaryFolder tempFolderRule = new TemporaryFolder();
   @Rule public AutoCloseableRule autoCloseableRule = new AutoCloseableRule();
 
-  private File root;
   private StateStorage storage;
 
   @Before
@@ -45,17 +44,12 @@ public class StateStorageTest {
   public void shouldReturnCorrectFolderForMetadata() {
     // given
     final int lastWrittenEventTerm = 3;
-    final long lastSuccessfulProcessedEventPosition = 13L;
     final long lastWrittenEventPosition = 12L;
     final File expected = new File(storage.getSnapshotsDirectory(), "13_12_3");
 
     // when
     final StateSnapshotMetadata metadata =
-        new StateSnapshotMetadata(
-            lastSuccessfulProcessedEventPosition,
-            lastWrittenEventPosition,
-            lastWrittenEventTerm,
-            false);
+        new StateSnapshotMetadata(lastWrittenEventPosition, lastWrittenEventTerm, false);
     final File folder = storage.getSnapshotDirectoryFor(metadata);
 
     // then
@@ -71,7 +65,6 @@ public class StateStorageTest {
     final StateSnapshotMetadata metadata = storage.getSnapshotMetadata(folder);
 
     // then
-    assertThat(metadata.getLastSuccessfulProcessedEventPosition()).isEqualTo(13L);
     assertThat(metadata.getLastWrittenEventPosition()).isEqualTo(12L);
     assertThat(metadata.getLastWrittenEventTerm()).isEqualTo(3);
     assertThat(metadata.exists()).isTrue();
@@ -86,7 +79,6 @@ public class StateStorageTest {
     final StateSnapshotMetadata metadata = storage.getSnapshotMetadata(folder);
 
     // then
-    assertThat(metadata.getLastSuccessfulProcessedEventPosition()).isEqualTo(1L);
     assertThat(metadata.getLastWrittenEventPosition()).isEqualTo(2L);
     assertThat(metadata.getLastWrittenEventTerm()).isEqualTo(0);
     assertThat(metadata.exists()).isFalse();
@@ -95,7 +87,7 @@ public class StateStorageTest {
   @Test
   public void shouldThrowIllegalArgumentExceptionIfFolderIsNotADirectory() throws IOException {
     // given
-    final File file = tempFolderRule.newFile("13_12_3");
+    final File file = tempFolderRule.newFile("12_3");
 
     // then
     assertThatThrownBy(() -> storage.getSnapshotMetadata(file))
@@ -116,7 +108,7 @@ public class StateStorageTest {
         };
     final StateSnapshotMetadata[] expected =
         new StateSnapshotMetadata[] {
-          new StateSnapshotMetadata(1, 2, 0, true), new StateSnapshotMetadata(0, 0, 0, true)
+          new StateSnapshotMetadata(2, 0, true), new StateSnapshotMetadata(0, 0, true)
         };
 
     // when
@@ -137,7 +129,7 @@ public class StateStorageTest {
         };
     final StateSnapshotMetadata[] expected =
         new StateSnapshotMetadata[] {
-          new StateSnapshotMetadata(1, 2, 0, true), new StateSnapshotMetadata(2, 3, 0, true)
+          new StateSnapshotMetadata(2, 0, true), new StateSnapshotMetadata(3, 0, true)
         };
 
     // when

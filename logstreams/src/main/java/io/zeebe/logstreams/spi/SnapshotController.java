@@ -28,9 +28,10 @@ public interface SnapshotController extends AutoCloseable {
    */
   void takeSnapshot(StateSnapshotMetadata metadata) throws Exception;
 
-  void takeSnapshotForPosition(long processingPos);
+  /** Takes a snapshot into a temporary folder, will overwrite an existing snapshot. */
+  void takeTempSnapshot();
 
-  void moveSnapshot(long processingPos, StateSnapshotMetadata metadata);
+  void moveSnapshot(StateSnapshotMetadata metadata);
 
   /**
    * Recovers the state from the latest snapshot and returns the corresponding metadata. The
