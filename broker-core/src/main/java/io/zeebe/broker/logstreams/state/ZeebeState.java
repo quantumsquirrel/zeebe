@@ -62,7 +62,7 @@ public class ZeebeState {
 
   private final DbString lastProcessedEventKey;
   private final DbLong lastProcessedEventPosition;
-  private final ColumnFamily<DbString, DbLong> lastProcessedEventPositionColumnFamily;
+  private final ColumnFamily<DbString, DbLong> lastProcessedRecordPositionColumnFamily;
 
   public ZeebeState(ZeebeDb<ZbColumnFamilies> zeebeDb, DbContext dbContext) {
     this(Protocol.DEPLOYMENT_PARTITION, zeebeDb, dbContext);
@@ -147,7 +147,7 @@ public class ZeebeState {
     lastProcessedEventPositionColumnFamily.put(lastProcessedEventKey, lastProcessedEventPosition);
   }
 
-  public long getLastSuccessfulProcessedPosition() {
+  public long getLastSuccessfuProcessedRecordPosition() {
     final DbLong position = lastProcessedEventPositionColumnFamily.get(lastProcessedEventKey);
     return position != null ? position.getValue() : NO_EVENTS_PROCESSED;
   }
