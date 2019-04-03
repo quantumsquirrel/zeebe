@@ -96,7 +96,7 @@ public class RecordingStreamProcessor implements StreamProcessor {
   }
 
   @Override
-  public long getLastSuccessfulProcessedPositionFromState() {
+  public long getLastSuccessfulProcessedRecordPositionFromState() {
     final DbLong value = lastProcessedPositionColumnFamily.get(keyInstance);
     return value == null ? NO_EVENTS_PROCESSED : value.getValue();
   }

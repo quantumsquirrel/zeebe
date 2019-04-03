@@ -111,8 +111,8 @@ public class TypedStreamProcessor implements StreamProcessor {
   }
 
   @Override
-  public long getLastSuccessfulProcessedPositionFromState() {
-    return zeebeState.getLastSuccessfulProcessedPosition();
+  public long getLastSuccessfulProcessedRecordPositionFromState() {
+    return zeebeState.getLastSuccessfuProcessedRecordPosition();
   }
 
   @Override

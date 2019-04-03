@@ -168,7 +168,8 @@ public class StreamProcessorController extends Actor {
     dbContext = zeebeDb.createContext();
     streamProcessor = streamProcessorFactory.createProcessor(zeebeDb, dbContext);
 
-    final long snapshotPosition = streamProcessor.getLastSuccessfulProcessedPositionFromState();
+    final long snapshotPosition =
+        streamProcessor.getLastSuccessfulProcessedRecordPositionFromState();
     logStreamReader.seekToFirstEvent(); // reset seek position
     if (lowerBoundSnapshotPosition > -1) {
       final boolean found = logStreamReader.seek(snapshotPosition);

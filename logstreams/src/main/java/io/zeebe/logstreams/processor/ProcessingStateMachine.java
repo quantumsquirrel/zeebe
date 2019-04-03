@@ -320,10 +320,7 @@ public final class ProcessingStateMachine {
   }
 
   public long getLastWrittenEventPosition() {
-    final long lastSuccessfulProcessedEventPosition = getLastSuccessfulProcessedEventPosition();
-    return lastWrittenEventPosition > lastSuccessfulProcessedEventPosition
-        ? lastWrittenEventPosition
-        : lastSuccessfulProcessedEventPosition;
+    return lastWrittenEventPosition;
   }
 
   public ActorFuture<Long> getLastWrittenPositionAsync() {
@@ -331,7 +328,7 @@ public final class ProcessingStateMachine {
   }
 
   public ActorFuture<Long> getLastProcessedPositionAsync() {
-    return actor.call(() -> lastSuccessfulProcessedEventPosition);
+    return actor.call(this::getLastSuccessfulProcessedEventPosition);
   }
 
   public static class ProcessingStateMachineBuilder {

@@ -60,7 +60,7 @@ public interface StreamProcessor {
    *
    * @return the last successful processed event position from the state
    */
-  default long getLastSuccessfulProcessedPositionFromState() {
+  default long getLastSuccessfulProcessedRecordPositionFromState() {
     return NO_EVENTS_PROCESSED;
   }
 
