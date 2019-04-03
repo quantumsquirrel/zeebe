@@ -56,6 +56,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.Before;
@@ -87,6 +88,7 @@ public class StreamProcessorControllerTest {
   private StreamProcessorService streamProcessorService;
   private StreamProcessorController streamProcessorController;
   private RecordingStreamProcessor streamProcessor;
+  private Consumer<RecordingStreamProcessor> changeRecordingStreamProcessor = (processor) -> {};
   private SnapshotController snapshotController;
   private EventProcessor eventProcessor;
   private EventFilter eventFilter;
@@ -425,6 +427,32 @@ public class StreamProcessorControllerTest {
   }
 
   @Test
+  public void shouldWriteSnapshotOnClosing() throws Exception {
+    // given
+    final ArgumentCaptor<Long> args = ArgumentCaptor.forClass(Long.class);
+    final CountDownLatch latch = new CountDownLatch(1);
+    changeMockInActorContext(
+        () ->
+            doAnswer(
+                    i -> {
+                      latch.countDown();
+                      return i.callRealMethod();
+                    })
+                .when(eventProcessor)
+                .executeSideEffects());
+
+    // when
+    final long lastEventPosition = writeEventAndWaitUntilProcessed(EVENT_1);
+
+    latch.await();
+    streamProcessorController.closeAsync().join();
+
+    // then
+    verify(snapshotController, timeout(5000).times(1)).takeSnapshot(args.capture());
+    assertThat(args.getValue()).isEqualTo(lastEventPosition);
+  }
+
+  @Test
   public void shouldRecoverLastPositionFromSnapshot() throws Exception {
     // given
     final long firstEventPosition = writeEventAndWaitUntilProcessed(EVENT_1);
@@ -449,6 +477,35 @@ public class StreamProcessorControllerTest {
         .hasSize(1)
         .extracting(LoggedEvent::getPosition)
         .containsExactly(secondEventPosition);
+  }
+
+  @Test
+  public void shouldRecoverFromSnapshotButReturnNoValidPosition() throws Exception {
+    // given
+    final long firstEventPosition = writeEventAndWaitUntilProcessed(EVENT_1);
+    logStreamRule.getClock().addTime(SNAPSHOT_INTERVAL);
+    verify(snapshotController, timeout(500).times(1)).takeTempSnapshot();
+    verify(snapshotController, timeout(500).times(1)).moveValidSnapshot(anyLong());
+
+    streamProcessorController.closeAsync().join();
+    final List<LoggedEvent> seenEventsBefore = streamProcessor.getEvents();
+
+    // when
+    changeRecordingStreamProcessor =
+        (processor) -> doReturn(-1L).when(processor).getPositionToRecoveryFrom();
+    streamProcessorController.openAsync().join();
+    final long secondEventPosition = writeEventAndWaitUntilProcessed(EVENT_2);
+
+    // then
+    assertThat(seenEventsBefore)
+        .hasSize(1)
+        .extracting(LoggedEvent::getPosition)
+        .containsExactly(firstEventPosition);
+
+    assertThat(streamProcessor.getEvents())
+        .hasSize(2)
+        .extracting(LoggedEvent::getPosition)
+        .containsExactly(firstEventPosition, secondEventPosition);
   }
 
   @Test
@@ -735,6 +792,7 @@ public class StreamProcessorControllerTest {
 
   private StreamProcessor createStreamProcessor(ZeebeDb zeebeDb, DbContext dbContext) {
     streamProcessor = RecordingStreamProcessor.createSpy(zeebeDb);
+    changeRecordingStreamProcessor.accept(streamProcessor);
     eventProcessor = streamProcessor.getEventProcessorSpy();
     return streamProcessor;
   }

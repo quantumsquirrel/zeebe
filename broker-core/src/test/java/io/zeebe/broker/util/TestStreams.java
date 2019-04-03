@@ -18,6 +18,7 @@
 package io.zeebe.broker.util;
 
 import static io.zeebe.test.util.TestUtil.doRepeatedly;
+import static org.mockito.Mockito.spy;
 
 import io.zeebe.broker.exporter.stream.ExporterRecord;
 import io.zeebe.broker.logstreams.processor.TypedRecord;
@@ -361,11 +362,16 @@ public class TestStreams {
       start();
     }
 
+    @Override
+    public SnapshotController getSnapshotController() {
+      return currentSnapshotController;
+    }
+
     private StreamProcessorService buildStreamProcessorController() {
       final String name = "processor";
 
       final StateStorage stateStorage = getStateStorageFactory().create(streamProcessorId, name);
-      currentSnapshotController = new StateSnapshotController(zeebeDbFactory, stateStorage);
+      currentSnapshotController = spy(new StateSnapshotController(zeebeDbFactory, stateStorage));
 
       return LogStreams.createStreamProcessor(name, streamProcessorId)
           .logStream(stream)
@@ -449,6 +455,11 @@ public class TestStreams {
           return result;
         }
       };
+    }
+
+    @Override
+    public long getPositionToRecoveryFrom() {
+      return wrappedProcessor.getPositionToRecoveryFrom();
     }
 
     @Override

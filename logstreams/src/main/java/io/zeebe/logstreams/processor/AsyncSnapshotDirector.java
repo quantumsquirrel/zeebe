@@ -21,6 +21,7 @@ import io.zeebe.util.sched.Actor;
 import io.zeebe.util.sched.ActorCondition;
 import io.zeebe.util.sched.SchedulingHints;
 import io.zeebe.util.sched.future.ActorFuture;
+import io.zeebe.util.sched.future.CompletableActorFuture;
 import java.time.Duration;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -42,6 +43,11 @@ public class AsyncSnapshotDirector extends Actor {
   private static final String ERROR_MSG_MOVE_SNAPSHOT =
       "Unexpected exception occurred on moving valid snapshot.";
 
+  private static final String LOG_MSG_ENFORCE_SNAPSHOT =
+      "Enforce snapshot creation for last written position {} with commit position {}.";
+  private static final String ERROR_MSG_ENFORCED_SNAPSHOT =
+      "Unexpected exception occured on creating snapshot, was enforced to do so.";
+
   private static final int INITIAL_POSITION = -1;
   private static final int MAX_SNAPSHOT_COUNT = 3;
 
@@ -57,6 +63,8 @@ public class AsyncSnapshotDirector extends Actor {
   private final LongSupplier commitPositionSupplier;
   private final String name;
   private final Duration snapshotRate;
+  private final StreamProcessorMetrics metrics;
+  private final String processorName;
 
   private ActorCondition commitCondition;
   private long lastWrittenEventPosition = INITIAL_POSITION;
@@ -71,15 +79,18 @@ public class AsyncSnapshotDirector extends Actor {
       SnapshotController snapshotController,
       Consumer<ActorCondition> conditionRegistration,
       Consumer<ActorCondition> conditionCheckOut,
-      LongSupplier commitPositionSupplier) {
+      LongSupplier commitPositionSupplier,
+      StreamProcessorMetrics metrics) {
     this.asyncLastProcessedPositionSupplier = asyncLastProcessedPositionSupplier;
     this.asyncLastWrittenPositionSupplier = asyncLastWrittenPositionSupplier;
     this.snapshotController = snapshotController;
     this.conditionRegistration = conditionRegistration;
     this.conditionCheckOut = conditionCheckOut;
     this.commitPositionSupplier = commitPositionSupplier;
+    this.processorName = name;
     this.name = name + "-snapshot-director";
     this.snapshotRate = snapshotRate;
+    this.metrics = metrics;
   }
 
   @Override
@@ -105,6 +116,24 @@ public class AsyncSnapshotDirector extends Actor {
     conditionCheckOut.accept(commitCondition);
   }
 
+  ActorFuture<Void> enforceSnapshotCreation(
+      final long lastWrittenPosition, final long commitPosition) {
+    final ActorFuture<Void> snapshotCreation = new CompletableActorFuture<>();
+    actor.call(
+        () -> {
+          if (lastWrittenPosition <= commitPosition) {
+            LOG.debug(LOG_MSG_ENFORCE_SNAPSHOT, lastWrittenPosition, commitPosition);
+            try {
+              createSnapshot(() -> snapshotController.takeSnapshot(commitPosition));
+            } catch (Exception ex) {
+              LOG.error(ERROR_MSG_ENFORCED_SNAPSHOT, ex);
+            }
+          }
+          snapshotCreation.complete(null);
+        });
+    return snapshotCreation;
+  }
+
   private void prepareTakingSnapshot() {
     if (pendingSnapshot) {
       return;
@@ -125,7 +154,7 @@ public class AsyncSnapshotDirector extends Actor {
 
   private void takeSnapshot() {
     pendingSnapshot = true;
-    snapshotController.takeTempSnapshot();
+    createSnapshot(snapshotController::takeTempSnapshot);
 
     final ActorFuture<Long> lastWrittenPosition = asyncLastWrittenPositionSupplier.get();
     actor.runOnCompletion(
@@ -143,6 +172,17 @@ public class AsyncSnapshotDirector extends Actor {
             LOG.error(ERROR_MSG_ON_RESOLVE_WRITTEN_POS, error);
           }
         });
+  }
+
+  private void createSnapshot(Runnable snapshotCreation) {
+    final long start = System.currentTimeMillis();
+    snapshotCreation.run();
+
+    final long end = System.currentTimeMillis();
+    final long snapshotCreationTime = end - start;
+
+    LOG.info("Creation of snapshot for {} took {} ms.", processorName, snapshotCreationTime);
+    metrics.recordSnapshotCreationTime(snapshotCreationTime);
   }
 
   private void onCommitCheck() {

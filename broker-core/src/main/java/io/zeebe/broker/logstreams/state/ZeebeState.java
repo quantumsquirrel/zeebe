@@ -23,7 +23,6 @@ import io.zeebe.broker.Loggers;
 import io.zeebe.broker.incident.processor.IncidentState;
 import io.zeebe.broker.job.JobState;
 import io.zeebe.broker.logstreams.processor.KeyGenerator;
-import io.zeebe.broker.logstreams.processor.TypedEventImpl;
 import io.zeebe.broker.logstreams.processor.TypedRecord;
 import io.zeebe.broker.subscription.message.state.MessageStartEventSubscriptionState;
 import io.zeebe.broker.subscription.message.state.MessageState;
@@ -142,8 +141,8 @@ public class ZeebeState {
     return false;
   }
 
-  public void markAsProcessed(TypedEventImpl event) {
-    lastProcessedEventPosition.wrapLong(event.getPosition());
+  public void markAsProcessed(long position) {
+    lastProcessedEventPosition.wrapLong(position);
     lastProcessedRecordPositionColumnFamily.put(lastProcessedEventKey, lastProcessedEventPosition);
   }
 

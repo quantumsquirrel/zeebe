@@ -25,7 +25,7 @@ public interface SnapshotController extends AutoCloseable {
    *
    * @param lowerBoundSnapshotPosition the lower bound snapshot position
    */
-  void takeSnapshot(long lowerBoundSnapshotPosition) throws Exception;
+  void takeSnapshot(long lowerBoundSnapshotPosition);
 
   /** Takes a snapshot into a temporary folder, will overwrite an existing snapshot. */
   void takeTempSnapshot();

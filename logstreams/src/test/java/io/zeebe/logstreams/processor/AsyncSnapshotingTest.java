@@ -46,6 +46,7 @@ import org.mockito.Mockito;
 
 public class AsyncSnapshotingTest {
 
+  private static final long TIMEOUT = 2_000L;
   private final TemporaryFolder tempFolderRule = new TemporaryFolder();
   private final AutoCloseableRule autoCloseableRule = new AutoCloseableRule();
   private final LogStreamRule logStreamRule = new LogStreamRule(tempFolderRule);
@@ -93,7 +94,8 @@ public class AsyncSnapshotingTest {
             snapshotController,
             actorCondition -> logStream.registerOnCommitPositionUpdatedCondition(actorCondition),
             actorCondition -> logStream.removeOnCommitPositionUpdatedCondition(actorCondition),
-            () -> logStream.getCommitPosition());
+            () -> logStream.getCommitPosition(),
+            mock(StreamProcessorMetrics.class));
     actorScheduler.submitActor(asyncSnapshotDirector).join();
   }
 
@@ -107,10 +109,10 @@ public class AsyncSnapshotingTest {
     // then
     final InOrder inOrder = Mockito.inOrder(snapshotController, logStream);
     inOrder
-        .verify(logStream, timeout(500L).times(1))
+        .verify(logStream, timeout(TIMEOUT).times(1))
         .registerOnCommitPositionUpdatedCondition(any());
-    inOrder.verify(snapshotController, timeout(500L).times(1)).takeTempSnapshot();
-    inOrder.verify(logStream, timeout(500L).times(2)).getCommitPosition();
+    inOrder.verify(snapshotController, timeout(TIMEOUT).times(1)).takeTempSnapshot();
+    inOrder.verify(logStream, timeout(TIMEOUT).times(2)).getCommitPosition();
     inOrder.verifyNoMoreInteractions();
   }
 
@@ -126,15 +128,15 @@ public class AsyncSnapshotingTest {
     // then
     final InOrder inOrder = Mockito.inOrder(snapshotController, logStream);
     inOrder
-        .verify(logStream, timeout(500L).times(1))
+        .verify(logStream, timeout(TIMEOUT).times(1))
         .registerOnCommitPositionUpdatedCondition(any());
-    inOrder.verify(snapshotController, timeout(500L).times(1)).takeTempSnapshot();
+    inOrder.verify(snapshotController, timeout(TIMEOUT).times(1)).takeTempSnapshot();
 
-    inOrder.verify(logStream, timeout(500L).times(3)).getCommitPosition();
+    inOrder.verify(logStream, timeout(TIMEOUT).times(3)).getCommitPosition();
 
-    inOrder.verify(snapshotController, timeout(500L).times(1)).moveValidSnapshot(25);
+    inOrder.verify(snapshotController, timeout(TIMEOUT).times(1)).moveValidSnapshot(25);
 
-    inOrder.verify(snapshotController, timeout(500L).times(1)).ensureMaxSnapshotCount(3);
+    inOrder.verify(snapshotController, timeout(TIMEOUT).times(1)).ensureMaxSnapshotCount(3);
     inOrder.verifyNoMoreInteractions();
   }
 
@@ -150,10 +152,10 @@ public class AsyncSnapshotingTest {
     // then
     final InOrder inOrder = Mockito.inOrder(snapshotController, logStream);
     inOrder
-        .verify(logStream, timeout(500L).times(1))
+        .verify(logStream, timeout(TIMEOUT).times(1))
         .registerOnCommitPositionUpdatedCondition(any());
-    inOrder.verify(snapshotController, timeout(500L).times(1)).takeTempSnapshot();
-    inOrder.verify(logStream, timeout(500L).times(2)).getCommitPosition();
+    inOrder.verify(snapshotController, timeout(TIMEOUT).times(1)).takeTempSnapshot();
+    inOrder.verify(logStream, timeout(TIMEOUT).times(2)).getCommitPosition();
     inOrder.verifyNoMoreInteractions();
   }
 

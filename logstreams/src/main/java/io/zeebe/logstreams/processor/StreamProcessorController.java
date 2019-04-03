@@ -158,20 +158,14 @@ public class StreamProcessorController extends Actor {
 
   private long recoverFromSnapshot() throws Exception {
     final long lowerBoundSnapshotPosition = snapshotController.recover();
-
     final ZeebeDb zeebeDb = snapshotController.openDb();
-    LOG.info(
-        "Recovered state of partition {} from snapshot at position {}",
-        partitionId,
-        snapshotPosition);
 
     dbContext = zeebeDb.createContext();
     streamProcessor = streamProcessorFactory.createProcessor(zeebeDb, dbContext);
 
-    final long snapshotPosition =
-        streamProcessor.getLastSuccessfulProcessedRecordPositionFromState();
+    final long snapshotPosition = streamProcessor.getPositionToRecoveryFrom();
     logStreamReader.seekToFirstEvent(); // reset seek position
-    if (lowerBoundSnapshotPosition > -1) {
+    if (lowerBoundSnapshotPosition > -1 && snapshotPosition > -1) {
       final boolean found = logStreamReader.seek(snapshotPosition);
       if (found && logStreamReader.hasNext()) {
         logStreamReader.seek(snapshotPosition + 1);
@@ -181,6 +175,10 @@ public class StreamProcessorController extends Actor {
       }
     }
 
+    LOG.info(
+        "Recovered state of partition {} from snapshot at position {}",
+        partitionId,
+        snapshotPosition);
     return snapshotPosition;
   }
 
@@ -197,7 +195,8 @@ public class StreamProcessorController extends Actor {
             snapshotController,
             logStream::registerOnCommitPositionUpdatedCondition,
             logStream::removeOnCommitPositionUpdatedCondition,
-            logStream::getCommitPosition);
+            logStream::getCommitPosition,
+            metrics);
 
     actorScheduler.submitActor(asyncSnapshotDirector);
 
@@ -233,14 +232,27 @@ public class StreamProcessorController extends Actor {
     if (!isFailed()) {
       actor.run(
           () -> {
+            final LogStream logStream = streamProcessorContext.logStream;
             if (asyncSnapshotDirector != null) {
-              asyncSnapshotDirector.close();
-            }
-
-            try {
-              snapshotController.close();
-            } catch (Exception e) {
-              LOG.error("Error on closing snapshotController.", e);
+              LOG.info("On closing, will try to enforce snapshot creation.");
+              actor.runOnCompletionBlockingCurrentPhase(
+                  asyncSnapshotDirector.enforceSnapshotCreation(
+                      processingStateMachine.getLastWrittenEventPosition(),
+                      logStream.getCommitPosition()),
+                  (v, ex) -> {
+                    try {
+                      asyncSnapshotDirector.close();
+                      snapshotController.close();
+                    } catch (Exception e) {
+                      LOG.error("Error on closing snapshotController.", e);
+                    }
+                  });
+            } else {
+              try {
+                snapshotController.close();
+              } catch (Exception e) {
+                LOG.error("Error on closing snapshotController.", e);
+              }
             }
           });
     }
