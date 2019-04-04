@@ -122,7 +122,7 @@ public class AsyncSnapshotingTest {
     logStreamRule.getClock().addTime(Duration.ofMinutes(1));
 
     // when
-    verify(snapshotController, timeout(500).times(1)).takeTempSnapshot();
+    verify(snapshotController, timeout(TIMEOUT).times(1)).takeTempSnapshot();
     logStreamRule.setCommitPosition(100L);
 
     // then
