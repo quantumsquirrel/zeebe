@@ -147,6 +147,16 @@ class TransactionalColumnFamily<
   }
 
   @Override
+  public void deleteRange(KeyType startKey, KeyType endKey) {
+    deleteRange(context, startKey, endKey);
+  }
+
+  @Override
+  public void deleteRange(DbContext dbContext, KeyType startKey, KeyType endKey) {
+    transactionDb.deleteRange(handle, dbContext, startKey, endKey);
+  }
+
+  @Override
   public boolean exists(KeyType key) {
     return exists(context, key);
   }

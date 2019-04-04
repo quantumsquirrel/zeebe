@@ -102,6 +102,7 @@ public class RocksDbInternal {
         Transaction.class.getDeclaredMethod(
             "delete", Long.TYPE, byte[].class, Integer.TYPE, Long.TYPE);
     removeWithHandle.setAccessible(true);
+
   }
 
   private static void seekWithHandle() throws NoSuchMethodException {

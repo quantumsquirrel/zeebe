@@ -26,14 +26,24 @@ import org.rocksdb.RocksIterator;
 public interface DbContext {
 
   /**
-   * Write the {@link DbKey} to the shared key buffer
+   * Write the {@link DbKey} to the first shared key buffer
    *
    * @param key the key to write
    */
   void writeKey(DbKey key);
 
-  /** @return the shared key buffer array */
+  /** @return the first shared key buffer array */
   byte[] getKeyBufferArray();
+
+  /**
+   * Write the {@link DbKey} to the second shared key buffer
+   *
+   * @param key the key to write
+   */
+  void writeSecondKey(DbKey key);
+
+  /** @return the second shared key buffer array */
+  byte[] getSecondKeyBufferArray();
 
   /**
    * Write the {@link DbValue} to the shared value buffer

@@ -200,6 +200,21 @@ public class ZeebeTransactionDb<ColumnFamilyNames extends Enum<ColumnFamilyNames
             transaction.delete(columnFamilyHandle, context.getKeyBufferArray(), key.getLength()));
   }
 
+  protected <KeyType extends DbKey> void deleteRange(
+      final long handle, final DbContext dbContext, final KeyType startKey, final KeyType endKey) {
+    dbContext.writeKey(startKey);
+    dbContext.writeSecondKey(endKey);
+
+    ensureInOpenTransaction(
+        dbContext,
+        transaction ->
+            optimisticTransactionDB.deleteRange(
+                handelToEnumMap.get(handle),
+                defaultWriteOptions,
+                dbContext.getKeyBufferArray(),
+                dbContext.getSecondKeyBufferArray()));
+  }
+
   ////////////////////////////////////////////////////////////////////
   //////////////////////////// ITERATION /////////////////////////////
   ////////////////////////////////////////////////////////////////////

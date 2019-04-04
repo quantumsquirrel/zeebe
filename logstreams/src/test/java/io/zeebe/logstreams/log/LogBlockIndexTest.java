@@ -230,6 +230,39 @@ public class LogBlockIndexTest {
     assertThat(blockIndex.getLastPosition()).isEqualTo(snapshotPosition);
   }
 
+  @Test
+  public void shouldDeleteBlockBeforeBlockWithPosition() {
+    // given
+    addBlocks(2);
+
+    // when
+    blockIndex.deleteUntilPosition(indexContext, 6);
+
+    // then
+    final long presentBlockAddress = blockIndex.lookupBlockAddress(indexContext, ENTRY_OFFSET);
+    assertThat(presentBlockAddress).isEqualTo(ENTRY_OFFSET * ADDRESS_MULTIPLIER);
+
+    final long deletedBlockAddress = blockIndex.lookupBlockAddress(indexContext, 0);
+    assertThat(deletedBlockAddress).isEqualTo(-1);
+  }
+
+  @Test
+  public void shouldNotFailWithEmptyRange() {
+    // given
+    blockIndex.addBlock(indexContext, 10, 1000);
+    blockIndex.addBlock(indexContext, 20, 2000);
+
+    // when
+    blockIndex.deleteUntilPosition(indexContext, 5);
+
+    // then
+    final long firstBlockAddress = blockIndex.lookupBlockAddress(indexContext, 10);
+    assertThat(firstBlockAddress).isEqualTo(1000);
+
+    final long secondBlockAddress = blockIndex.lookupBlockAddress(indexContext, 20);
+    assertThat(secondBlockAddress).isEqualTo(2000);
+  }
+
   // Adds blocks and returns the last added position
   private long addBlocks(int numBlocks) {
     for (int blockPos = 0; blockPos < numBlocks * ENTRY_OFFSET; blockPos += ENTRY_OFFSET) {

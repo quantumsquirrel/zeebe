@@ -42,6 +42,7 @@ public class DefaultDbContext implements DbContext {
 
   // we can also simply use one buffer
   private final ExpandableArrayBuffer keyBuffer = new ExpandableArrayBuffer();
+  private final ExpandableArrayBuffer secondKeyBuffer = new ExpandableArrayBuffer();
   private final ExpandableArrayBuffer valueBuffer = new ExpandableArrayBuffer();
 
   private final DirectBuffer keyViewBuffer = new UnsafeBuffer(0, 0);
@@ -62,6 +63,11 @@ public class DefaultDbContext implements DbContext {
   }
 
   @Override
+  public void writeSecondKey(DbKey key) {
+    key.write(secondKeyBuffer, 0);
+  }
+
+  @Override
   public void writeValue(DbValue value) {
     value.write(valueBuffer, 0);
   }
@@ -69,6 +75,11 @@ public class DefaultDbContext implements DbContext {
   @Override
   public byte[] getKeyBufferArray() {
     return keyBuffer.byteArray();
+  }
+
+  @Override
+  public byte[] getSecondKeyBufferArray() {
+    return secondKeyBuffer.byteArray();
   }
 
   @Override

@@ -156,6 +156,18 @@ public class LogBlockIndex {
     indexColumnFamily.put(indexContext.getDbContext(), dbBlockPosition, dbBlockAddress);
   }
 
+  // TODO: docs and tests
+  public void deleteUntilPosition(final LogBlockIndexContext indexContext, final long position) {
+    final long blockPosition = lookupBlockPosition(indexContext, position);
+    if (blockPosition == VALUE_NOT_FOUND) {
+      return;
+    }
+
+    final DbLong startKey = indexContext.writeKeyInstance(0);
+    final DbLong endKey = indexContext.writeAuxiliaryKeyInstance(blockPosition);
+    indexColumnFamily.deleteRange(indexContext.getDbContext(), startKey, endKey);
+  }
+
   /**
    * Checks if the log block index has entries.
    *

@@ -150,6 +150,17 @@ public interface ColumnFamily<KeyType extends DbKey, ValueType extends DbValue> 
   void delete(KeyType key);
 
   /**
+   * Deletes the entries from startKey (including) to endKey (excluding)
+   *
+   * @param startKey
+   * @param endKey
+   */
+  // TODO: finish docs
+  void deleteRange(KeyType startKey, KeyType endKey);
+
+  void deleteRange(DbContext dbContext, KeyType startKey, KeyType endKey);
+
+  /**
    * Checks for key existence in the column family.
    *
    * @param key the key to look for

@@ -338,6 +338,33 @@ public class ColumnFamilyTest {
     assertThat(columnFamily.isEmpty()).isTrue();
   }
 
+  @Test
+  public void shouldDeleteRange() {
+    // given
+    final DbLong endKey = new DbLong();
+    putKeyValuePair(0, 0);
+    putKeyValuePair(1, 1);
+    putKeyValuePair(2, 2);
+    putKeyValuePair(3, 3);
+
+    // when
+    key.wrapLong(1);
+    endKey.wrapLong(2);
+
+    // TODO: isn't deleting 1
+    columnFamily.deleteRange(key, endKey);
+
+    // then
+    key.wrapLong(0);
+    assertThat(columnFamily.get(key).getValue()).isEqualTo(0);
+    key.wrapLong(1);
+    assertThat(columnFamily.exists(key)).isFalse();
+    key.wrapLong(2);
+    assertThat(columnFamily.get(key).getValue()).isEqualTo(2);
+    key.wrapLong(3);
+    assertThat(columnFamily.get(key).getValue()).isEqualTo(3);
+  }
+
   private void putKeyValuePair(int key, int value) {
     this.key.wrapLong(key);
     this.value.wrapLong(value);

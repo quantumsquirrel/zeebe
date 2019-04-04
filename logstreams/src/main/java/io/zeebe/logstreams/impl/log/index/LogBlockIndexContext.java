@@ -27,26 +27,34 @@ public class LogBlockIndexContext {
   private final DbContext dbContext;
 
   private final DbLong keyInstance = new DbLong();
+  private final DbLong auxiliaryKeyInstance = new DbLong();
   private final DbLong valueInstance = new DbLong();
 
-  public LogBlockIndexContext(DbContext dbContext) {
+  LogBlockIndexContext(DbContext dbContext) {
     this.dbContext = dbContext;
   }
 
-  public DbLong getKeyInstance() {
+  DbLong getKeyInstance() {
     return keyInstance;
   }
 
-  public DbLong getValueInstance() {
+  DbLong getAuxiliaryKeyInstance() {return auxiliaryKeyInstance;}
+
+  DbLong getValueInstance() {
     return valueInstance;
   }
 
-  public DbLong writeKeyInstance(long key) {
+  DbLong writeKeyInstance(long key) {
     keyInstance.wrapLong(key);
     return keyInstance;
   }
 
-  public DbLong writeValueInstance(long value) {
+  DbLong writeAuxiliaryKeyInstance(long key) {
+    auxiliaryKeyInstance.wrapLong(key);
+    return auxiliaryKeyInstance;
+  }
+
+  DbLong writeValueInstance(long value) {
     valueInstance.wrapLong(value);
     return valueInstance;
   }
