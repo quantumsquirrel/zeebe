@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.atomix.core.election.LeaderElection;
 import io.zeebe.broker.Broker;
 import io.zeebe.broker.clustering.base.partitions.Partition;
+import io.zeebe.broker.clustering.base.partitions.PartitionLeaderElection;
 import io.zeebe.broker.clustering.base.partitions.PartitionServiceNames;
 import io.zeebe.broker.clustering.base.partitions.RaftState;
 import io.zeebe.broker.it.GrpcClientRule;
@@ -113,7 +114,7 @@ public class BrokerLeaderChangeTest {
         oldLeader, PartitionServiceNames.leaderPartitionServiceName(partitionName));
 
     // get leader election primitive for a partition
-    final LeaderElection<String> election = getElection(oldLeader, partition);
+    final LeaderElection<String> election = getElection(oldLeader, partition).getElection();
     assertThat(election.getLeadership().leader().id()).isEqualTo(String.valueOf(oldLeaderId));
 
     // when
@@ -154,7 +155,7 @@ public class BrokerLeaderChangeTest {
 
     // when
     final LeaderElection<String> election =
-        getElection(getBroker(leaderForPartition.getNodeId()), partition);
+        getElection(getBroker(leaderForPartition.getNodeId()), partition).getElection();
     // Force another node to become leader
     election.evict(String.valueOf(leaderForPartition.getNodeId()));
     waitUntil(
@@ -184,23 +185,14 @@ public class BrokerLeaderChangeTest {
     assertBrokerHasService(
         oldLeader, PartitionServiceNames.leaderPartitionServiceName(partitionName));
 
-    // Remove partition role change listener. So when new leader starts, old leader is not listening
-    // to the leadership events.
-    oldLeader
-        .getBrokerContext()
-        .getServiceContainer()
-        .removeService(
-            PartitionServiceNames.partitionLeadershipEventListenerServiceName(partitionName))
-        .join();
-
     // get leaderelection primitive for a partition
-    final LeaderElection<String> election = getElection(oldLeader, partition);
+    final PartitionLeaderElection partitionLeaderElection = getElection(oldLeader, partition);
+    final LeaderElection<String> election = partitionLeaderElection.getElection();
     assertThat(election.getLeadership().leader().id()).isEqualTo(String.valueOf(oldLeaderId));
 
-    // Install leadership services manually
-    installLeaderServices(oldLeader, partition, election.getLeadership().leader().term());
-    assertBrokerHasService(
-        oldLeader, PartitionServiceNames.leaderPartitionServiceName(partitionName));
+    // Remove leader election listener. So when new leader starts, old leader is not
+    // listening to the leadership events.
+    election.removeListener(partitionLeaderElection);
 
     final long workflowInstanceKey1 = clientRule.createWorkflowInstance(workflowKey);
     final long workflowInstanceKey2 = clientRule.createWorkflowInstance(workflowKey);
@@ -259,8 +251,8 @@ public class BrokerLeaderChangeTest {
         .isEqualTo(2); // Two workflows completed.
   }
 
-  private LeaderElection<String> getElection(Broker node, int partitionId) {
-    final Injector<LeaderElection> leaderElectionInjector = new Injector<>();
+  private PartitionLeaderElection getElection(Broker node, int partitionId) {
+    final Injector<PartitionLeaderElection> leaderElectionInjector = new Injector<>();
     node.getBrokerContext()
         .getServiceContainer()
         .createService(ServiceName.newServiceName("test-leader-election", Void.class), () -> null)
@@ -309,9 +301,14 @@ public class BrokerLeaderChangeTest {
         .install();
 
     // Open logStreamAppender
+    final LeaderOpenLogStreamAppenderService leaderOpenLogStreamAppenderService =
+        new LeaderOpenLogStreamAppenderService();
     final ServiceName<Void> openLogStreamServiceName = leaderOpenLogStreamServiceName(logName);
     startContext
-        .createService(openLogStreamServiceName, new LeaderOpenLogStreamAppenderService(logStream))
+        .createService(openLogStreamServiceName, leaderOpenLogStreamAppenderService)
+        .dependency(
+            logStreamServiceName(logName),
+            leaderOpenLogStreamAppenderService.getLogStreamInjector())
         .install();
 
     startContext

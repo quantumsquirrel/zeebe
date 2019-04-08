@@ -19,24 +19,31 @@ package io.zeebe.broker.clustering.base.partitions;
 
 import static io.zeebe.broker.clustering.base.ClusterBaseLayerServiceNames.ATOMIX_JOIN_SERVICE;
 import static io.zeebe.broker.clustering.base.ClusterBaseLayerServiceNames.ATOMIX_SERVICE;
+import static io.zeebe.broker.clustering.base.ClusterBaseLayerServiceNames.FOLLOWER_PARTITION_GROUP_NAME;
 import static io.zeebe.broker.clustering.base.ClusterBaseLayerServiceNames.LEADERSHIP_SERVICE_GROUP;
+import static io.zeebe.broker.clustering.base.ClusterBaseLayerServiceNames.LEADER_PARTITION_GROUP_NAME;
 import static io.zeebe.broker.clustering.base.ClusterBaseLayerServiceNames.raftInstallServiceName;
+import static io.zeebe.broker.clustering.base.partitions.PartitionServiceNames.followerPartitionServiceName;
+import static io.zeebe.broker.clustering.base.partitions.PartitionServiceNames.leaderOpenLogStreamServiceName;
+import static io.zeebe.broker.clustering.base.partitions.PartitionServiceNames.leaderPartitionServiceName;
 import static io.zeebe.broker.clustering.base.partitions.PartitionServiceNames.partitionLeaderElectionServiceName;
-import static io.zeebe.broker.clustering.base.partitions.PartitionServiceNames.partitionLeadershipEventListenerServiceName;
 import static io.zeebe.broker.logstreams.LogStreamServiceNames.stateStorageFactoryServiceName;
+import static io.zeebe.logstreams.impl.service.LogStreamServiceNames.distributedLogPartitionServiceName;
 
-import io.atomix.core.election.LeaderElection;
 import io.zeebe.broker.Loggers;
 import io.zeebe.broker.clustering.base.raft.RaftPersistentConfiguration;
 import io.zeebe.broker.clustering.base.topology.PartitionInfo;
 import io.zeebe.broker.logstreams.state.StateStorageFactory;
 import io.zeebe.broker.logstreams.state.StateStorageFactoryService;
+import io.zeebe.distributedlog.impl.DistributedLogstreamPartition;
+import io.zeebe.logstreams.impl.service.LeaderOpenLogStreamAppenderService;
 import io.zeebe.logstreams.impl.service.LogStreamServiceNames;
 import io.zeebe.logstreams.log.LogStream;
 import io.zeebe.servicecontainer.CompositeServiceBuilder;
 import io.zeebe.servicecontainer.Service;
 import io.zeebe.servicecontainer.ServiceName;
 import io.zeebe.servicecontainer.ServiceStartContext;
+import io.zeebe.util.sched.Actor;
 import org.slf4j.Logger;
 
 /**
@@ -45,7 +52,8 @@ import org.slf4j.Logger;
  * Partition} service(s) into the broker for other components (like client api or stream processing)
  * to attach to.
  */
-public class PartitionInstallService implements Service<Void> {
+public class PartitionInstallService extends Actor
+    implements Service<Void>, PartitionRoleChangeListener {
   private static final Logger LOG = Loggers.CLUSTERING_LOGGER;
 
   private final RaftPersistentConfiguration configuration;
@@ -53,8 +61,11 @@ public class PartitionInstallService implements Service<Void> {
 
   private ServiceStartContext startContext;
   private ServiceName<LogStream> logStreamServiceName;
-
   private ServiceName<StateStorageFactory> stateStorageFactoryServiceName;
+  private ServiceName<Void> openLogStreamServiceName;
+  private ServiceName<Partition> leaderPartitionServiceName;
+  private ServiceName<Partition> followerPartitionServiceName;
+  private String logName;
 
   public PartitionInstallService(final RaftPersistentConfiguration configuration) {
     this.configuration = configuration;
@@ -71,8 +82,10 @@ public class PartitionInstallService implements Service<Void> {
   public void start(final ServiceStartContext startContext) {
     this.startContext = startContext;
 
+    startContext.getScheduler().submitActor(this);
+
     final int partitionId = configuration.getPartitionId();
-    final String logName = Partition.getPartitionName(partitionId);
+    logName = Partition.getPartitionName(partitionId);
 
     // TODO: rename/remove?
     final ServiceName<Void> raftInstallServiceName = raftInstallServiceName(partitionId);
@@ -89,18 +102,10 @@ public class PartitionInstallService implements Service<Void> {
     partitionInstall
         .createService(stateStorageFactoryServiceName, stateStorageFactoryService)
         .install();
-    /*
-    final DistributedLogstreamPartition distributedLogstreamPartition =
-        new DistributedLogstreamPartition(partitionId);
-    partitionInstall
-        .createService(distributedLogPartitionServiceName(logName), distributedLogstreamPartition)
-        .dependency(ATOMIX_SERVICE, distributedLogstreamPartition.getAtomixInjector())
-        .dependency(ATOMIX_JOIN_SERVICE)
-        // .dependency(logStreamServiceName, distributedLogstreamPartition.getLogStreamInjector())
-        .install();*/
 
     final PartitionLeaderElection leaderElection = new PartitionLeaderElection(partitionId);
-    final ServiceName<LeaderElection> partitionLeaderElectionServiceName =
+    leaderElection.addListener(this);
+    final ServiceName<PartitionLeaderElection> partitionLeaderElectionServiceName =
         partitionLeaderElectionServiceName(logName);
     partitionInstall
         .createService(partitionLeaderElectionServiceName, leaderElection)
@@ -109,15 +114,90 @@ public class PartitionInstallService implements Service<Void> {
         .group(LEADERSHIP_SERVICE_GROUP)
         .install();
 
-    final PartitionRoleChangeListener roleChangeListener =
-        new PartitionRoleChangeListener(partitionInfo);
-    partitionInstall
-        .createService(partitionLeadershipEventListenerServiceName(logName), roleChangeListener)
-        .dependency(ATOMIX_SERVICE, roleChangeListener.getAtomixInjector())
-        .dependency(partitionLeaderElectionServiceName, roleChangeListener.getElectionInjector())
-        .dependency(logStreamServiceName, roleChangeListener.getLogStreamInjector())
+    partitionInstall.install();
+
+    leaderPartitionServiceName = leaderPartitionServiceName(logName);
+    openLogStreamServiceName = leaderOpenLogStreamServiceName(logName);
+    followerPartitionServiceName = followerPartitionServiceName(logName);
+  }
+
+  public void onTransitionToLeader(int partitionId, long term) {
+    LOG.info("Transition to Leader in PartitionInstall");
+    actor.call(
+        () -> {
+          removeFollowerPartitionService();
+          installLeaderPartition(term);
+        });
+  }
+
+  public void onTransitionToFollower(int partitionId) {
+    actor.call(
+        () -> {
+          removeLeaderPartitionService();
+          installFollowerPartition();
+        });
+  }
+
+  private void removeLeaderPartitionService() {
+    if (startContext.hasService(leaderPartitionServiceName)) {
+      LOG.debug(
+          "Removing leader partition services for partition {}", partitionInfo.getPartitionId());
+      startContext.removeService(leaderPartitionServiceName);
+      startContext.removeService(openLogStreamServiceName);
+
+      // Remove distributedlog partition service. It is needed only by the leader to append.
+      startContext.removeService(distributedLogPartitionServiceName(logName));
+    }
+  }
+
+  private void installLeaderPartition(long leaderTerm) {
+    LOG.debug(
+        "Installing leader partition service for partition {}", partitionInfo.getPartitionId());
+    final Partition partition = new Partition(partitionInfo, RaftState.LEADER);
+
+    // Get an instance of DistributedLog
+    final DistributedLogstreamPartition distributedLogstreamPartition =
+        new DistributedLogstreamPartition(partitionInfo.getPartitionId(), leaderTerm);
+    startContext
+        .createService(distributedLogPartitionServiceName(logName), distributedLogstreamPartition)
+        .dependency(ATOMIX_SERVICE, distributedLogstreamPartition.getAtomixInjector())
         .install();
 
-    partitionInstall.install();
+    // Open logStreamAppender
+    final LeaderOpenLogStreamAppenderService leaderOpenLogStreamAppenderService =
+        new LeaderOpenLogStreamAppenderService();
+    startContext
+        .createService(openLogStreamServiceName, leaderOpenLogStreamAppenderService)
+        .dependency(logStreamServiceName, leaderOpenLogStreamAppenderService.getLogStreamInjector())
+        .dependency(distributedLogPartitionServiceName(logName))
+        .install();
+
+    startContext
+        .createService(leaderPartitionServiceName, partition)
+        .dependency(openLogStreamServiceName)
+        .dependency(logStreamServiceName, partition.getLogStreamInjector())
+        .dependency(stateStorageFactoryServiceName, partition.getStateStorageFactoryInjector())
+        .group(LEADER_PARTITION_GROUP_NAME)
+        .install();
+  }
+
+  private void installFollowerPartition() {
+    LOG.debug(
+        "Installing follower partition service for partition {}", partitionInfo.getPartitionId());
+    final Partition partition = new Partition(partitionInfo, RaftState.FOLLOWER);
+
+    startContext
+        .createService(followerPartitionServiceName, partition)
+        .dependency(logStreamServiceName, partition.getLogStreamInjector())
+        .dependency(stateStorageFactoryServiceName, partition.getStateStorageFactoryInjector())
+        .group(FOLLOWER_PARTITION_GROUP_NAME)
+        .install();
+  }
+
+  private void removeFollowerPartitionService() {
+    if (startContext.hasService(followerPartitionServiceName)) {
+      LOG.debug("Removing follower partition service for partition {}", partitionInfo);
+      startContext.removeService(followerPartitionServiceName);
+    }
   }
 }

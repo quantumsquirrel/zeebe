@@ -18,7 +18,11 @@
 package io.zeebe.broker.clustering.base.partitions;
 
 import io.atomix.core.Atomix;
+import io.atomix.core.election.Leader;
 import io.atomix.core.election.LeaderElection;
+import io.atomix.core.election.LeadershipEvent;
+import io.atomix.core.election.LeadershipEventListener;
+import io.atomix.primitive.PrimitiveState;
 import io.atomix.protocols.raft.MultiRaftProtocol;
 import io.zeebe.broker.Loggers;
 import io.zeebe.distributedlog.impl.DistributedLogstreamName;
@@ -26,11 +30,18 @@ import io.zeebe.servicecontainer.Injector;
 import io.zeebe.servicecontainer.Service;
 import io.zeebe.servicecontainer.ServiceStartContext;
 import io.zeebe.servicecontainer.ServiceStopContext;
+import io.zeebe.util.sched.Actor;
 import io.zeebe.util.sched.future.CompletableActorFuture;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 
-public class PartitionLeaderElection implements Service<LeaderElection> {
+public class PartitionLeaderElection extends Actor
+    implements Service<PartitionLeaderElection>,
+        LeadershipEventListener<String>,
+        Consumer<PrimitiveState> {
 
   private static final Logger LOG = Loggers.CLUSTERING_LOGGER;
 
@@ -45,13 +56,18 @@ public class PartitionLeaderElection implements Service<LeaderElection> {
 
   private final int partitionId;
   private String memberId;
+  private final List<PartitionRoleChangeListener> leaderElectionListeners;
+  private boolean isLeader =
+      false; // true if this node was the leader in the last leadership event received.
 
   public PartitionLeaderElection(int partitionId) {
     this.partitionId = partitionId;
+    leaderElectionListeners = new ArrayList<>();
   }
 
   @Override
   public void start(ServiceStartContext startContext) {
+
     atomix = atomixInjector.getValue();
     memberId = atomix.getMembershipService().getLocalMember().id().id();
 
@@ -69,22 +85,112 @@ public class PartitionLeaderElection implements Service<LeaderElection> {
           election = e;
           election.run(memberId);
           startFuture.complete(null);
+          startContext.getScheduler().submitActor(this);
         });
 
     startContext.async(startFuture, true);
   }
 
   @Override
-  public void stop(ServiceStopContext stopContext) {
-    election.withdraw(memberId);
+  protected void onActorStarted() {
+    initListeners();
+  }
+
+  private void initListeners() {
+    election.addListener(this);
+    election.addStateChangeListener(this);
+    final Leader<String> currentLeader = election.getLeadership().leader();
+    if (memberId.equals(currentLeader.id())) {
+      transitionToLeader(currentLeader.term());
+    } else {
+      transitionToFollower();
+    }
+  }
+
+  private void transitionToFollower() {
+    isLeader = false;
+    leaderElectionListeners.forEach(l -> l.onTransitionToFollower(partitionId));
+  }
+
+  private void transitionToLeader(long term) {
+    isLeader = true;
+    leaderElectionListeners.forEach(l -> l.onTransitionToLeader(partitionId, term));
   }
 
   @Override
-  public LeaderElection<String> get() {
-    return election;
+  public void stop(ServiceStopContext stopContext) {
+    election.async().withdraw(memberId);
+  }
+
+  @Override
+  public PartitionLeaderElection get() {
+    return this;
+  }
+
+  public int getPartitionId() {
+    return partitionId;
   }
 
   public Injector<Atomix> getAtomixInjector() {
     return atomixInjector;
+  }
+
+  @Override
+  public void event(LeadershipEvent<String> leadershipEvent) {
+    final Leader<String> newLeader = leadershipEvent.newLeadership().leader();
+    if (newLeader == null) {
+      return;
+    }
+
+    final String memberId = atomix.getMembershipService().getLocalMember().id().id();
+
+    final boolean becomeFollower = isLeader && !memberId.equals(newLeader.id());
+    final boolean becomeLeader = !isLeader && memberId.equals(newLeader.id());
+
+    if (becomeFollower) {
+      actor.call(this::transitionToFollower);
+    } else if (becomeLeader) {
+      actor.call(() -> transitionToLeader(newLeader.term()));
+    }
+  }
+
+  @Override
+  public void accept(PrimitiveState primitiveState) {
+    switch (primitiveState) {
+        // If primitive is not in connected state, this node might miss leadership events. Hence for
+        // safety, transition to follower.
+      case CLOSED:
+      case EXPIRED:
+      case SUSPENDED:
+        if (isLeader) {
+          transitionToFollower();
+        }
+        break;
+      case CONNECTED:
+        final Leader<String> currentLeader = election.getLeadership().leader();
+        final boolean isCurrentLeader =
+            currentLeader != null && memberId.equals(currentLeader.id());
+        if (!isLeader && isCurrentLeader) {
+          actor.call(() -> transitionToLeader(currentLeader.term()));
+        } else if (isLeader && !isCurrentLeader) {
+          actor.call(this::transitionToFollower);
+        }
+    }
+  }
+
+  /**
+   * add listeners to get notified when the node transition between (stream processor) Leader and
+   * Follower roles.
+   */
+  public void addListener(PartitionRoleChangeListener listener) {
+    leaderElectionListeners.add(listener);
+  }
+
+  public boolean isLeader() {
+    return isLeader;
+  }
+
+  public LeaderElection<String> getElection() {
+    return election;
   }
 }

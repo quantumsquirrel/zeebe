@@ -24,14 +24,11 @@ import io.atomix.cluster.ClusterMembershipEvent.Type;
 import io.atomix.cluster.ClusterMembershipEventListener;
 import io.atomix.cluster.Member;
 import io.atomix.core.Atomix;
-import io.atomix.core.election.Leader;
-import io.atomix.core.election.LeaderElection;
-import io.atomix.core.election.Leadership;
-import io.atomix.core.election.LeadershipEvent;
 import io.zeebe.broker.Loggers;
+import io.zeebe.broker.clustering.base.partitions.PartitionLeaderElection;
+import io.zeebe.broker.clustering.base.partitions.PartitionRoleChangeListener;
 import io.zeebe.broker.clustering.base.partitions.RaftState;
 import io.zeebe.broker.system.configuration.ClusterCfg;
-import io.zeebe.distributedlog.impl.DistributedLogstreamName;
 import io.zeebe.protocol.impl.data.cluster.BrokerInfo;
 import io.zeebe.transport.SocketAddress;
 import io.zeebe.util.LogUtil;
@@ -43,7 +40,7 @@ import java.util.Properties;
 import org.slf4j.Logger;
 
 public class TopologyManagerImpl extends Actor
-    implements TopologyManager, ClusterMembershipEventListener {
+    implements TopologyManager, ClusterMembershipEventListener, PartitionRoleChangeListener {
   private static final Logger LOG = Loggers.CLUSTERING_LOGGER;
 
   private final Topology topology;
@@ -97,73 +94,38 @@ public class TopologyManagerImpl extends Actor
     return "topology";
   }
 
-  public void onLeaderElectionStarted(LeaderElection<String> election) {
+  public void onLeaderElectionStarted(PartitionLeaderElection election) {
     actor.run(
         () -> {
           LOG.debug("Topology manager adding leader election listener");
-          election.addListener(this::onLeadershipEvent);
-          updateLeader(
-              election.getLeadership(), DistributedLogstreamName.getPartitionId(election.name()));
+          election.addListener(this);
+          updateLeader(election.isLeader(), election.getPartitionId());
         });
   }
 
-  private void updateLeader(Leadership<String> leadership, int partitionId) {
-    final String memberId = atomix.getMembershipService().getLocalMember().id().id();
-    final Leader<String> leader = leadership.leader();
+  private void updateLeader(boolean isLeader, int partitionId) {
     final RaftState newState;
     final NodeInfo memberInfo = topology.getLocal();
 
-    final boolean isLeader = leader != null && memberId.equals(leader.id());
     if (isLeader) {
       newState = RaftState.LEADER;
     } else {
       newState = RaftState.FOLLOWER;
     }
 
-    final int replicationFactor = leadership.candidates().size() + 1;
-
-    updatePartition(partitionId, replicationFactor, memberInfo, newState);
+    // TODO: is replicationFactor ever used?
+    updatePartition(partitionId, -1, memberInfo, newState);
     publishTopologyChanges();
   }
 
-  // Listener for leadership change events.
-  private void onLeadershipEvent(LeadershipEvent<String> leadershipEvent) {
-    actor.call(
-        () -> {
-          final Leader<String> oldLeader = leadershipEvent.oldLeadership().leader();
-          final Leader<String> newLeader = leadershipEvent.newLeadership().leader();
-          if (newLeader == null) {
-            return;
-          }
+  @Override
+  public void onTransitionToFollower(int partitionId) {
+    updateLeader(false, partitionId);
+  }
 
-          final NodeInfo memberInfo = topology.getLocal();
-          final String memberId = atomix.getMembershipService().getLocalMember().id().id();
-
-          final boolean wasLeader = oldLeader != null && memberId.equals(oldLeader.id());
-          final boolean isLeader = memberId.equals(newLeader.id());
-          final boolean becomeLeader = !wasLeader & isLeader;
-          final boolean becomeFollower = wasLeader & !isLeader;
-          final boolean myStateChanged = becomeFollower || becomeLeader;
-          if (myStateChanged) {
-            final RaftState newState;
-
-            if (becomeFollower) {
-              newState = RaftState.FOLLOWER;
-
-            } else {
-              newState = RaftState.LEADER;
-            }
-
-            final int partitionId =
-                DistributedLogstreamName.getPartitionId(leadershipEvent.topic());
-            final int replicationFactor = leadershipEvent.newLeadership().candidates().size() + 1;
-
-            LOG.debug("Become {} for partition {}", newState, partitionId);
-            updatePartition(partitionId, replicationFactor, memberInfo, newState);
-
-            publishTopologyChanges();
-          }
-        });
+  @Override
+  public void onTransitionToLeader(int partitionId, long leaderTerm) {
+    updateLeader(true, partitionId);
   }
 
   public void updatePartition(
