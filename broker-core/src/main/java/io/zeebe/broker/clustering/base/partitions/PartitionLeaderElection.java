@@ -66,7 +66,7 @@ public class PartitionLeaderElection extends Actor
   private final List<PartitionRoleChangeListener> leaderElectionListeners;
   private boolean isLeader =
       false; // true if this node was the leader in the last leadership event received.
-  private long leaderTerm;
+  private long leaderTerm; // current term if this node is the leader.
 
   public PartitionLeaderElection(int partitionId) {
     this.partitionId = partitionId;
@@ -136,7 +136,10 @@ public class PartitionLeaderElection extends Actor
 
   @Override
   public void stop(ServiceStopContext stopContext) {
+    election.async().removeListener(this);
+    election.async().removeStateChangeListener(this);
     election.async().withdraw(memberId);
+    actor.close();
   }
 
   @Override
@@ -215,6 +218,13 @@ public class PartitionLeaderElection extends Actor
           } else {
             listener.onTransitionToFollower(partitionId);
           }
+        });
+  }
+
+  public void removeListener(PartitionRoleChangeListener listener) {
+    actor.run(
+        () -> {
+          leaderElectionListeners.remove(listener);
         });
   }
 

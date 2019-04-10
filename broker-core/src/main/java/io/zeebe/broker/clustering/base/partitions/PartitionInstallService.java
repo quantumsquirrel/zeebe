@@ -43,6 +43,7 @@ import io.zeebe.servicecontainer.CompositeServiceBuilder;
 import io.zeebe.servicecontainer.Service;
 import io.zeebe.servicecontainer.ServiceName;
 import io.zeebe.servicecontainer.ServiceStartContext;
+import io.zeebe.servicecontainer.ServiceStopContext;
 import io.zeebe.util.sched.Actor;
 import io.zeebe.util.sched.future.ActorFuture;
 import org.slf4j.Logger;
@@ -68,6 +69,7 @@ public class PartitionInstallService extends Actor
   private ServiceName<Partition> followerPartitionServiceName;
   private String logName;
   private ActorFuture<PartitionLeaderElection> leaderElectionInstallFuture;
+  private PartitionLeaderElection leaderElection;
 
   public PartitionInstallService(final RaftPersistentConfiguration configuration) {
     this.configuration = configuration;
@@ -103,7 +105,7 @@ public class PartitionInstallService extends Actor
         .createService(stateStorageFactoryServiceName, stateStorageFactoryService)
         .install();
 
-    final PartitionLeaderElection leaderElection = new PartitionLeaderElection(partitionId);
+    leaderElection = new PartitionLeaderElection(partitionId);
     final ServiceName<PartitionLeaderElection> partitionLeaderElectionServiceName =
         partitionLeaderElectionServiceName(logName);
     leaderElectionInstallFuture =
@@ -121,6 +123,11 @@ public class PartitionInstallService extends Actor
     followerPartitionServiceName = followerPartitionServiceName(logName);
 
     startContext.getScheduler().submitActor(this);
+  }
+
+  @Override
+  public void stop(ServiceStopContext stopContext) {
+    leaderElection.removeListener(this);
   }
 
   @Override
