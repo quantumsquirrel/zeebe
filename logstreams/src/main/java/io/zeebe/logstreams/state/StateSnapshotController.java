@@ -97,25 +97,13 @@ public class StateSnapshotController implements SnapshotController {
 
   private long extractMostRecentSnapshot(List<File> snapshots) throws Exception {
     final File runtimeDirectory = storage.getRuntimeDirectory();
-    File snapshotDirectory = null;
-
-    //    if (!snapshots.isEmpty()) {
-    //      snapshotDirectory = snapshots.stream().max(Comparator.naturalOrder()).orElse(null);
-    //    }
 
     if (runtimeDirectory.exists()) {
       FileUtil.deleteFolder(runtimeDirectory.getAbsolutePath());
     }
 
-    long lowerBoundSnapshotPosition = -1;
-    //    if (snapshotDirectory != null) {
-    //      lowerBoundSnapshotPosition = Long.parseLong(snapshotDirectory.getName());
-    //      FileUtil.copySnapshot(runtimeDirectory, snapshotDirectory);
-    //    }
-
     final List<File> snapshotDirectories =
-        snapshots
-            .stream()
+        snapshots.stream()
             .sorted(Comparator.naturalOrder())
             .sorted(Comparator.reverseOrder())
             .collect(Collectors.toList());
@@ -124,9 +112,9 @@ public class StateSnapshotController implements SnapshotController {
 
     for (int s = 0; s < snapshotDirectories.size(); s++) {
 
-      snapshotDirectory = snapshotDirectories.get(s);
+      final File snapshotDirectory = snapshotDirectories.get(s);
 
-      lowerBoundSnapshotPosition = Long.parseLong(snapshotDirectory.getName());
+      final long lowerBoundSnapshotPosition = Long.parseLong(snapshotDirectory.getName());
       FileUtil.copySnapshot(runtimeDirectory, snapshotDirectory);
 
       try {
@@ -137,12 +125,20 @@ public class StateSnapshotController implements SnapshotController {
         return lowerBoundSnapshotPosition;
 
       } catch (Exception e) {
-        LOG.error("Failed to open snapshot '{}'", snapshotDirectory, e);
 
         if (s < snapshots.size() - 1) {
-          LOG.warn("Remove snapshot '{}' because it can't be opened", snapshotDirectory);
+          LOG.warn(
+              "Failed to open snapshot '{}'. Delete this snapshot and try a previous one.",
+              snapshotDirectory,
+              e);
           FileUtil.deleteFolder(snapshotDirectory.getAbsolutePath());
           FileUtil.deleteFolder(runtimeDirectory.getAbsolutePath());
+        } else {
+          LOG.error(
+              "Failed to open snapshot '{}'. No snapshots available to recover from.",
+              snapshotDirectory,
+              e);
+          throw new RuntimeException("Failed to recover snapshot", e);
         }
       }
     }

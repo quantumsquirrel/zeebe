@@ -159,7 +159,7 @@ public class StateSnapshotControllerTest {
     snapshotController.takeSnapshot(2);
 
     snapshotController.close();
-    corruptSnapshot(1);
+    corruptSnapshot(2);
 
     // when
     final long lowerBound = snapshotController.recover();
@@ -171,7 +171,7 @@ public class StateSnapshotControllerTest {
   }
 
   @Test
-  public void shouldFailIfAllSnapshotsAreCorrupted() throws Exception {
+  public void shouldFailToOpenDatabaseIfAllSnapshotsAreCorrupted() throws Exception {
     // given two snapshots
     final RocksDBWrapper wrapper = new RocksDBWrapper();
 
@@ -183,14 +183,10 @@ public class StateSnapshotControllerTest {
     corruptSnapshot(1);
 
     // when/then
-    final long lowerBound = snapshotController.recover();
-
-    assertThatThrownBy(() -> wrapper.wrap(snapshotController.openDb()))
+    assertThatThrownBy(() -> snapshotController.recover())
         .isInstanceOf(RuntimeException.class)
-        .hasMessage("Unexpected error occurred trying to open the database")
-        .hasCauseInstanceOf(RocksDBException.class);
-
-    assertThat(lowerBound).isEqualTo(-1);
+        .hasMessage("Failed to recover snapshot")
+        .hasRootCauseInstanceOf(RocksDBException.class);
   }
 
   private void corruptSnapshot(long position) throws IOException {
