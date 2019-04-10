@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 
 /** Controls how snapshot/recovery operations are performed */
@@ -98,26 +99,63 @@ public class StateSnapshotController implements SnapshotController {
     final File runtimeDirectory = storage.getRuntimeDirectory();
     File snapshotDirectory = null;
 
-    if (!snapshots.isEmpty()) {
-      snapshotDirectory = snapshots.stream().max(Comparator.naturalOrder()).orElse(null);
-    }
+    //    if (!snapshots.isEmpty()) {
+    //      snapshotDirectory = snapshots.stream().max(Comparator.naturalOrder()).orElse(null);
+    //    }
 
     if (runtimeDirectory.exists()) {
       FileUtil.deleteFolder(runtimeDirectory.getAbsolutePath());
     }
 
     long lowerBoundSnapshotPosition = -1;
-    if (snapshotDirectory != null) {
+    //    if (snapshotDirectory != null) {
+    //      lowerBoundSnapshotPosition = Long.parseLong(snapshotDirectory.getName());
+    //      FileUtil.copySnapshot(runtimeDirectory, snapshotDirectory);
+    //    }
+
+    final List<File> snapshotDirectories =
+        snapshots
+            .stream()
+            .sorted(Comparator.naturalOrder())
+            .sorted(Comparator.reverseOrder())
+            .collect(Collectors.toList());
+
+    LOG.debug("Available snapshots '{}'", snapshotDirectories);
+
+    for (int s = 0; s < snapshotDirectories.size(); s++) {
+
+      snapshotDirectory = snapshotDirectories.get(s);
+
       lowerBoundSnapshotPosition = Long.parseLong(snapshotDirectory.getName());
       FileUtil.copySnapshot(runtimeDirectory, snapshotDirectory);
+
+      try {
+        openDb();
+
+        LOG.debug("Recovered state from snapshot '{}'", snapshotDirectory);
+
+        return lowerBoundSnapshotPosition;
+
+      } catch (Exception e) {
+        LOG.error("Failed to open snapshot '{}'", snapshotDirectory, e);
+
+        if (s < snapshots.size() - 1) {
+          LOG.warn("Remove snapshot '{}' because it can't be opened", snapshotDirectory);
+          FileUtil.deleteFolder(snapshotDirectory.getAbsolutePath());
+          FileUtil.deleteFolder(runtimeDirectory.getAbsolutePath());
+        }
+      }
     }
 
-    return lowerBoundSnapshotPosition;
+    return -1;
   }
 
   @Override
   public ZeebeDb openDb() {
-    db = zeebeDbFactory.createDb(storage.getRuntimeDirectory());
+    if (db == null) {
+      db = zeebeDbFactory.createDb(storage.getRuntimeDirectory());
+    }
+
     return db;
   }
 

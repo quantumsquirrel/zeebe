@@ -24,10 +24,13 @@ import io.zeebe.logstreams.util.RocksDBWrapper;
 import io.zeebe.test.util.AutoCloseableRule;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.rocksdb.RocksDBException;
 
 public class StateSnapshotControllerTest {
   @Rule public TemporaryFolder tempFolderRule = new TemporaryFolder();
@@ -141,5 +144,63 @@ public class StateSnapshotControllerTest {
     assertThat(storage.list()).extracting(f -> f.getName()).containsOnly("2322", "131");
     final long latestLowerBound = snapshotController.recover();
     assertThat(latestLowerBound).isEqualTo(2322);
+  }
+
+  @Test
+  public void shouldRecoverFromLatestNotCorruptedSnapshot() throws Exception {
+    // given two snapshots
+    final RocksDBWrapper wrapper = new RocksDBWrapper();
+    wrapper.wrap(snapshotController.openDb());
+
+    wrapper.putInt("x", 1);
+    snapshotController.takeSnapshot(1);
+
+    wrapper.putInt("x", 2);
+    snapshotController.takeSnapshot(2);
+
+    snapshotController.close();
+    corruptSnapshot(1);
+
+    // when
+    final long lowerBound = snapshotController.recover();
+    wrapper.wrap(snapshotController.openDb());
+
+    // then
+    assertThat(lowerBound).isEqualTo(1);
+    assertThat(wrapper.getInt("x")).isEqualTo(1);
+  }
+
+  @Test
+  public void shouldFailIfAllSnapshotsAreCorrupted() throws Exception {
+    // given two snapshots
+    final RocksDBWrapper wrapper = new RocksDBWrapper();
+
+    wrapper.wrap(snapshotController.openDb());
+    wrapper.putInt("x", 1);
+
+    snapshotController.takeSnapshot(1);
+    snapshotController.close();
+    corruptSnapshot(1);
+
+    // when/then
+    final long lowerBound = snapshotController.recover();
+
+    assertThatThrownBy(() -> wrapper.wrap(snapshotController.openDb()))
+        .isInstanceOf(RuntimeException.class)
+        .hasMessage("Unexpected error occurred trying to open the database")
+        .hasCauseInstanceOf(RocksDBException.class);
+
+    assertThat(lowerBound).isEqualTo(-1);
+  }
+
+  private void corruptSnapshot(long position) throws IOException {
+    final File snapshot = storage.getSnapshotDirectoryFor(position);
+    assertThat(snapshot).isNotNull();
+
+    final File[] files = snapshot.listFiles((dir, name) -> name.endsWith(".sst"));
+    assertThat(files).hasSizeGreaterThan(0);
+
+    final File file = files[0];
+    Files.write(file.toPath(), "<--corrupted-->".getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
   }
 }
