@@ -92,7 +92,7 @@ public class DistributedLogstreamPartition implements Service<DistributedLogstre
               LOG.info("Claimed leadership Successfully");
               startFuture.complete(null);
             });
-    startContext.async(startFuture);
+    startContext.async(startFuture, true);
   }
 
   @Override
