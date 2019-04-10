@@ -95,37 +95,32 @@ public class TopologyManagerImpl extends Actor
   }
 
   public void onLeaderElectionStarted(PartitionLeaderElection election) {
-    actor.run(
+    actor.call(
         () -> {
           LOG.debug("Topology manager adding leader election listener");
           election.addListener(this);
-          updateLeader(election.isLeader(), election.getPartitionId());
         });
   }
 
-  private void updateLeader(boolean isLeader, int partitionId) {
-    final RaftState newState;
-    final NodeInfo memberInfo = topology.getLocal();
+  private void updateRole(RaftState state, int partitionId) {
+    actor.call(
+        () -> {
+          final NodeInfo memberInfo = topology.getLocal();
 
-    if (isLeader) {
-      newState = RaftState.LEADER;
-    } else {
-      newState = RaftState.FOLLOWER;
-    }
-
-    // TODO: is replicationFactor ever used?
-    updatePartition(partitionId, -1, memberInfo, newState);
-    publishTopologyChanges();
+          // TODO: is replicationFactor ever used? https://github.com/zeebe-io/zeebe/issues/2326
+          updatePartition(partitionId, -1, memberInfo, state);
+          publishTopologyChanges();
+        });
   }
 
   @Override
   public void onTransitionToFollower(int partitionId) {
-    updateLeader(false, partitionId);
+    updateRole(RaftState.FOLLOWER, partitionId);
   }
 
   @Override
   public void onTransitionToLeader(int partitionId, long leaderTerm) {
-    updateLeader(true, partitionId);
+    updateRole(RaftState.LEADER, partitionId);
   }
 
   public void updatePartition(

@@ -44,6 +44,7 @@ import io.zeebe.servicecontainer.Service;
 import io.zeebe.servicecontainer.ServiceName;
 import io.zeebe.servicecontainer.ServiceStartContext;
 import io.zeebe.util.sched.Actor;
+import io.zeebe.util.sched.future.ActorFuture;
 import org.slf4j.Logger;
 
 /**
@@ -66,6 +67,7 @@ public class PartitionInstallService extends Actor
   private ServiceName<Partition> leaderPartitionServiceName;
   private ServiceName<Partition> followerPartitionServiceName;
   private String logName;
+  private ActorFuture<PartitionLeaderElection> leaderElectionInstallFuture;
 
   public PartitionInstallService(final RaftPersistentConfiguration configuration) {
     this.configuration = configuration;
@@ -81,8 +83,6 @@ public class PartitionInstallService extends Actor
   @Override
   public void start(final ServiceStartContext startContext) {
     this.startContext = startContext;
-
-    startContext.getScheduler().submitActor(this);
 
     final int partitionId = configuration.getPartitionId();
     logName = Partition.getPartitionName(partitionId);
@@ -104,25 +104,32 @@ public class PartitionInstallService extends Actor
         .install();
 
     final PartitionLeaderElection leaderElection = new PartitionLeaderElection(partitionId);
-    leaderElection.addListener(this);
     final ServiceName<PartitionLeaderElection> partitionLeaderElectionServiceName =
         partitionLeaderElectionServiceName(logName);
-    partitionInstall
-        .createService(partitionLeaderElectionServiceName, leaderElection)
-        .dependency(ATOMIX_SERVICE, leaderElection.getAtomixInjector())
-        .dependency(ATOMIX_JOIN_SERVICE)
-        .group(LEADERSHIP_SERVICE_GROUP)
-        .install();
+    leaderElectionInstallFuture =
+        partitionInstall
+            .createService(partitionLeaderElectionServiceName, leaderElection)
+            .dependency(ATOMIX_SERVICE, leaderElection.getAtomixInjector())
+            .dependency(ATOMIX_JOIN_SERVICE)
+            .group(LEADERSHIP_SERVICE_GROUP)
+            .install();
 
     partitionInstall.install();
 
     leaderPartitionServiceName = leaderPartitionServiceName(logName);
     openLogStreamServiceName = leaderOpenLogStreamServiceName(logName);
     followerPartitionServiceName = followerPartitionServiceName(logName);
+
+    startContext.getScheduler().submitActor(this);
+  }
+
+  @Override
+  protected void onActorStarted() {
+    actor.runOnCompletion(
+        leaderElectionInstallFuture, (leaderElection, e) -> leaderElection.addListener(this));
   }
 
   public void onTransitionToLeader(int partitionId, long term) {
-    LOG.info("Transition to Leader in PartitionInstall");
     actor.call(
         () -> {
           removeFollowerPartitionService();

@@ -22,8 +22,10 @@ import io.atomix.core.election.Leader;
 import io.atomix.core.election.LeaderElection;
 import io.atomix.core.election.LeadershipEvent;
 import io.atomix.core.election.LeadershipEventListener;
+import io.atomix.primitive.PrimitiveException;
 import io.atomix.primitive.PrimitiveState;
 import io.atomix.protocols.raft.MultiRaftProtocol;
+import io.atomix.protocols.raft.ReadConsistency;
 import io.zeebe.broker.Loggers;
 import io.zeebe.distributedlog.impl.DistributedLogstreamName;
 import io.zeebe.servicecontainer.Injector;
@@ -52,13 +54,19 @@ public class PartitionLeaderElection extends Actor
   private LeaderElection<String> election;
 
   private static final MultiRaftProtocol PROTOCOL =
-      MultiRaftProtocol.builder().withPartitioner(DistributedLogstreamName.getInstance()).build();
+      MultiRaftProtocol.builder()
+          .withPartitioner(DistributedLogstreamName.getInstance())
+          .withReadConsistency(
+              ReadConsistency
+                  .LINEARIZABLE) // guarantee that getLeadership always return the latest leader
+          .build();
 
   private final int partitionId;
   private String memberId;
   private final List<PartitionRoleChangeListener> leaderElectionListeners;
   private boolean isLeader =
       false; // true if this node was the leader in the last leadership event received.
+  private long leaderTerm;
 
   public PartitionLeaderElection(int partitionId) {
     this.partitionId = partitionId;
@@ -84,8 +92,8 @@ public class PartitionLeaderElection extends Actor
         e -> {
           election = e;
           election.run(memberId);
+          startContext.getScheduler().submitActor(this).join();
           startFuture.complete(null);
-          startContext.getScheduler().submitActor(this);
         });
 
     startContext.async(startFuture, true);
@@ -99,10 +107,18 @@ public class PartitionLeaderElection extends Actor
   private void initListeners() {
     election.addListener(this);
     election.addStateChangeListener(this);
-    final Leader<String> currentLeader = election.getLeadership().leader();
-    if (memberId.equals(currentLeader.id())) {
-      transitionToLeader(currentLeader.term());
-    } else {
+    try {
+      final Leader<String> currentLeader = election.getLeadership().leader();
+      if (memberId.equals(currentLeader.id())) {
+        transitionToLeader(currentLeader.term());
+      } else {
+        transitionToFollower();
+      }
+    } catch (PrimitiveException e) {
+      LOG.error(
+          "Couldn't get current leadership for partition {}. Transitioning to follower.",
+          partitionId);
+      e.printStackTrace();
       transitionToFollower();
     }
   }
@@ -113,6 +129,7 @@ public class PartitionLeaderElection extends Actor
   }
 
   private void transitionToLeader(long term) {
+    leaderTerm = term;
     isLeader = true;
     leaderElectionListeners.forEach(l -> l.onTransitionToLeader(partitionId, term));
   }
@@ -167,13 +184,20 @@ public class PartitionLeaderElection extends Actor
         }
         break;
       case CONNECTED:
-        final Leader<String> currentLeader = election.getLeadership().leader();
-        final boolean isCurrentLeader =
-            currentLeader != null && memberId.equals(currentLeader.id());
-        if (!isLeader && isCurrentLeader) {
-          actor.call(() -> transitionToLeader(currentLeader.term()));
-        } else if (isLeader && !isCurrentLeader) {
-          actor.call(this::transitionToFollower);
+        try {
+          final Leader<String> currentLeader = election.getLeadership().leader();
+          final boolean isCurrentLeader =
+              currentLeader != null && memberId.equals(currentLeader.id());
+          if (!isLeader && isCurrentLeader) {
+            actor.call(() -> transitionToLeader(currentLeader.term()));
+          } else if (isLeader && !isCurrentLeader) {
+            actor.call(this::transitionToFollower);
+          }
+        } catch (PrimitiveException e) {
+          LOG.error("Couldn't get current leadership for partition {}.", partitionId);
+          if (isLeader) {
+            actor.call(this::transitionToFollower);
+          }
         }
     }
   }
@@ -183,7 +207,15 @@ public class PartitionLeaderElection extends Actor
    * Follower roles.
    */
   public void addListener(PartitionRoleChangeListener listener) {
-    leaderElectionListeners.add(listener);
+    actor.run(
+        () -> {
+          leaderElectionListeners.add(listener);
+          if (isLeader) {
+            listener.onTransitionToLeader(partitionId, leaderTerm);
+          } else {
+            listener.onTransitionToFollower(partitionId);
+          }
+        });
   }
 
   public boolean isLeader() {
